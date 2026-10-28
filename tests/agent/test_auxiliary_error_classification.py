@@ -90,3 +90,28 @@ def test_upstream_capacity_429_is_not_a_credential_to_bench(monkeypatch, body, b
     if benches_pool:
         assert pool.rotate_calls[0]["status_code"] == 429
         assert pool.rotate_calls[0]["api_key_hint"] == "sk-failed"
+
+def test_fra11_openrouter_wrapped_429_preserves_pool(monkeypatch):
+    """The auxiliary helper must not bench a shared key for a wrapped upstream 429."""
+    from agent import auxiliary_client
+    from agent import error_classifier
+
+    class Wrapped429(Exception):
+        status_code = 429
+        body = {"fra11_kind": "upstream"}
+
+    monkeypatch.setattr(auxiliary_client, "_is_rate_limit_error", lambda exc: True)
+    monkeypatch.setattr(
+        error_classifier, "_is_openrouter_upstream_error",
+        lambda body, provider: bool(body and body.get("fra11_kind") == "upstream"),
+    )
+    monkeypatch.setattr(
+        error_classifier, "_extract_upstream_provider_name",
+        lambda body: "mock-upstream",
+    )
+
+    def forbidden_pool_load(provider):
+        raise AssertionError("wrapped upstream 429 must not load or rotate the credential pool")
+
+    monkeypatch.setattr(auxiliary_client, "load_pool", forbidden_pool_load)
+    assert auxiliary_client._recover_provider_pool("openrouter", Wrapped429("429")) is False
