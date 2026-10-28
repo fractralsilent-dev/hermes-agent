@@ -53,6 +53,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up pinned test environment
+        id: setup-test-env
         uses: ./.github/actions/setup-pm
         with:
           extras: '["all", "anthropic", "bedrock", "mistral", "fal", "modal", "daytona", "parallel-web", "keychain"]'
@@ -75,6 +76,8 @@ jobs:
           ruff check agent/auxiliary_client.py tests/agent/test_auxiliary_error_classification.py
 
       - name: Run related regression files in isolated processes
+        env:
+          HERMES_PYTHON: ${{ steps.setup-test-env.outputs.python-path }}
         shell: bash
         run: |
           set -euo pipefail
