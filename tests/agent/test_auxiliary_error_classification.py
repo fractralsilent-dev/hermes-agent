@@ -90,3 +90,37 @@ def test_upstream_capacity_429_is_not_a_credential_to_bench(monkeypatch, body, b
     if benches_pool:
         assert pool.rotate_calls[0]["status_code"] == 429
         assert pool.rotate_calls[0]["api_key_hint"] == "sk-failed"
+
+def test_openrouter_wrapped_upstream_429_preserves_pool(monkeypatch):
+    """A wrapped upstream 429 must not quarantine a healthy OpenRouter credential."""
+
+    class Wrapped429(Exception):
+        status_code = 429
+        body = {
+            "error": {
+                "message": "Provider returned error",
+                "metadata": {
+                    "raw": '{"error": {"message": "rate limit exceeded for this model"}}',
+                    "provider_name": "mock-upstream",
+                },
+            },
+        }
+
+        def __str__(self):
+            # The SDK-facing summary omits the structured upstream metadata.
+            return "Error code: 429 - {'error': {'message': 'Provider returned error'}}"
+
+    from agent.error_classifier import _is_openrouter_upstream_error
+
+    exc = Wrapped429()
+    assert ac._is_rate_limit_error(exc)
+    assert not ac._is_overloaded_error(exc)
+    assert _is_openrouter_upstream_error(exc.body, "openrouter")
+
+    def forbidden_pool_load(provider):
+        raise AssertionError(
+            "wrapped upstream 429 must not load or rotate the credential pool"
+        )
+
+    monkeypatch.setattr(ac, "load_pool", forbidden_pool_load)
+    assert ac._recover_provider_pool("openrouter", exc) is False
