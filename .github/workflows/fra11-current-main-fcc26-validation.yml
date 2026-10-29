@@ -1,0 +1,154 @@
+name: FRA-11 current-main OpenRouter 429 validation (fcc26f)
+
+on:
+  push:
+    branches:
+      - "fra11/openrouter-429-guard-current-main-fcc26f-20261030"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fra11-current-main-fcc26f-20261030
+  cancel-in-progress: false
+
+jobs:
+  auxiliary-regression:
+    name: Auxiliary / error-classification regression (pinned current-main port)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      OPENROUTER_API_KEY: ""
+      OPENAI_API_KEY: ""
+      NOUS_API_KEY: ""
+      ANTHROPIC_API_KEY: ""
+      GEMINI_API_KEY: ""
+      GOOGLE_API_KEY: ""
+      DEEPSEEK_API_KEY: ""
+      GROQ_API_KEY: ""
+      CEREBRAS_API_KEY: ""
+      TOGETHER_API_KEY: ""
+      XAI_API_KEY: ""
+      MISTRAL_API_KEY: ""
+      FIREWORKS_API_KEY: ""
+      BAI_API_KEY: ""
+    steps:
+      - name: Checkout exact current-main port
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: 891f06bf59af9c8df268db7f9a18c2b319cfc9d9
+          persist-credentials: false
+
+      - name: Verify exact candidate SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "891f06bf59af9c8df268db7f9a18c2b319cfc9d9"
+          printf 'CANDIDATE_SHA_VERIFIED=%s\n' "$actual"
+
+      - name: Set up pinned test environment
+        id: setup-test-env
+        uses: ./.github/actions/setup-pm
+        with:
+          extras: '["all", "anthropic", "bedrock", "mistral", "fal", "modal", "daytona", "parallel-web", "keychain"]'
+          test-environment: "true"
+          prune-python-cache: "true"
+          save-tools-cache: "false"
+          save-python-cache: "false"
+          cache-node: "false"
+
+      - name: Install pinned lint tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m scripts.ci.python_packages "$(python -m scripts.code_health --print-pins)"
+
+      - name: Ruff candidate source and direct tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruff check agent/auxiliary_client.py tests/agent/test_auxiliary_client.py
+
+      - name: Run focused regression set
+        env:
+          HERMES_PYTHON: ${{ steps.setup-test-env.outputs.python-path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$HERMES_PYTHON" -m pytest -q --tb=short \
+            tests/agent/test_auxiliary_client.py \
+            tests/agent/test_auxiliary_error_classification.py \
+            tests/agent/test_auxiliary_transient_retry.py \
+            tests/agent/test_error_classifier.py \
+            tests/agent/test_error_classifier_observed.py \
+            tests/agent/test_openrouter_response_cache.py \
+            tests/agent/test_rate_limit_reset_hint.py \
+            tests/agent/test_rate_limit_tracker.py \
+            tests/agent/test_free_tier_rate_limit_class.py
+
+  provider-recovery-adjacent:
+    name: Adjacent auxiliary pool and fallback regressions (pinned current-main port)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      OPENROUTER_API_KEY: ""
+      OPENAI_API_KEY: ""
+      NOUS_API_KEY: ""
+      ANTHROPIC_API_KEY: ""
+      GEMINI_API_KEY: ""
+      GOOGLE_API_KEY: ""
+      DEEPSEEK_API_KEY: ""
+      GROQ_API_KEY: ""
+      CEREBRAS_API_KEY: ""
+      TOGETHER_API_KEY: ""
+      XAI_API_KEY: ""
+      MISTRAL_API_KEY: ""
+      FIREWORKS_API_KEY: ""
+      BAI_API_KEY: ""
+    steps:
+      - name: Checkout exact current-main port
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: 891f06bf59af9c8df268db7f9a18c2b319cfc9d9
+          persist-credentials: false
+
+      - name: Verify exact candidate SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "891f06bf59af9c8df268db7f9a18c2b319cfc9d9"
+          printf 'CANDIDATE_SHA_VERIFIED=%s\n' "$actual"
+
+      - name: Set up pinned test environment
+        id: setup-test-env
+        uses: ./.github/actions/setup-pm
+        with:
+          extras: '["all", "anthropic", "bedrock", "mistral", "fal", "modal", "daytona", "parallel-web", "keychain"]'
+          test-environment: "true"
+          prune-python-cache: "true"
+          save-tools-cache: "false"
+          save-python-cache: "false"
+          cache-node: "false"
+
+      - name: Run adjacent provider-recovery regressions
+        env:
+          HERMES_PYTHON: ${{ steps.setup-test-env.outputs.python-path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$HERMES_PYTHON" -m pytest -q --tb=short \
+            tests/agent/test_auxiliary_anthropic_pool_fallback_regression.py \
+            tests/agent/test_auxiliary_auth_rung_fallthrough.py \
+            tests/agent/test_auxiliary_client_cache_eviction.py \
+            tests/agent/test_auxiliary_client_cache_follows_credential.py \
+            tests/agent/test_auxiliary_client_resolve_dedup.py \
+            tests/agent/test_auxiliary_concurrency.py \
+            tests/agent/test_auxiliary_fallback_multihop.py \
+            tests/agent/test_auxiliary_parameter_rung_chaining.py \
+            tests/agent/test_auxiliary_runtime_cache_key.py \
+            tests/agent/test_auxiliary_hooks.py \
+            tests/agent/test_auxiliary_openrouter_max_tokens.py \
+            tests/agent/test_auxiliary_client_nous_401_cache_key.py \
+            tests/agent/test_auxiliary_unavailable_nous_reason.py
