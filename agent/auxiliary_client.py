@@ -3714,6 +3714,38 @@ def _recover_provider_pool(provider: str, exc: Exception, *, failed_api_key: str
     another process already rotated (current() would be None).
     """
     normalized = _normalize_aux_provider(provider)
+    # OpenRouter's wrapped upstream 429 throttles an upstream model, not the API key.
+    # Match the main classifier so auxiliary calls do not bench a healthy credential.
+    if normalized == "openrouter" and _is_rate_limit_error(exc):
+        try:
+            from agent.error_classifier import _is_openrouter_upstream_error, _extract_upstream_provider_name
+            body = getattr(exc, "body", None)
+            if body is None:
+                response = getattr(exc, "response", None)
+                if response is not None:
+                    body = response.json()
+            # The OpenAI SDK can expose OpenRouter's inner error object as a flat
+            # {message, code, metadata} body rather than the HTTP {error: {...}} envelope.
+            # Normalize only the structured OpenRouter metadata shape before using the shared classifier.
+            classifier_body = body
+            if (
+                isinstance(body, dict)
+                and not isinstance(body.get("error"), dict)
+                and isinstance(body.get("metadata"), dict)
+            ):
+                classifier_body = {"error": body}
+            if _is_openrouter_upstream_error(classifier_body, normalized):
+                upstream = _extract_upstream_provider_name(classifier_body) or "unknown upstream"
+                logger.info(
+                    "Auxiliary client: OpenRouter upstream rate limit from %s — preserving credential health",
+                    upstream,
+                )
+                return False
+        except Exception as classify_exc:
+            logger.debug(
+                "Auxiliary client: upstream 429 classification unavailable (%s); using normal recovery",
+                type(classify_exc).__name__,
+            )
     try:
         pool = pool_for_aux_provider(provider, normalized, load_pool)
     except Exception as load_exc:
