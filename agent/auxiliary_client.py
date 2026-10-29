@@ -3724,8 +3724,18 @@ def _recover_provider_pool(provider: str, exc: Exception, *, failed_api_key: str
                 response = getattr(exc, "response", None)
                 if response is not None:
                     body = response.json()
-            if _is_openrouter_upstream_error(body, normalized):
-                upstream = _extract_upstream_provider_name(body) or "unknown upstream"
+            # The OpenAI SDK can expose OpenRouter's inner error object as a flat
+            # {message, code, metadata} body rather than the HTTP {error: {...}} envelope.
+            # Normalize only the structured OpenRouter metadata shape before using the shared classifier.
+            classifier_body = body
+            if (
+                isinstance(body, dict)
+                and not isinstance(body.get("error"), dict)
+                and isinstance(body.get("metadata"), dict)
+            ):
+                classifier_body = {"error": body}
+            if _is_openrouter_upstream_error(classifier_body, normalized):
+                upstream = _extract_upstream_provider_name(classifier_body) or "unknown upstream"
                 logger.info(
                     "Auxiliary client: OpenRouter upstream rate limit from %s — preserving credential health",
                     upstream,
