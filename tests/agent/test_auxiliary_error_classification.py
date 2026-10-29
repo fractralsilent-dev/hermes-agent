@@ -91,12 +91,10 @@ def test_upstream_capacity_429_is_not_a_credential_to_bench(monkeypatch, body, b
         assert pool.rotate_calls[0]["status_code"] == 429
         assert pool.rotate_calls[0]["api_key_hint"] == "sk-failed"
 
-def test_openrouter_wrapped_upstream_429_preserves_pool(monkeypatch):
-    """A wrapped upstream 429 must not quarantine a healthy OpenRouter credential."""
-
-    class Wrapped429(Exception):
-        status_code = 429
-        body = {
+@pytest.mark.parametrize(
+    "body",
+    [
+        {
             "error": {
                 "message": "Provider returned error",
                 "metadata": {
@@ -104,23 +102,106 @@ def test_openrouter_wrapped_upstream_429_preserves_pool(monkeypatch):
                     "provider_name": "mock-upstream",
                 },
             },
-        }
+        },
+        {
+            # The OpenAI SDK may expose the inner OpenRouter error object directly.
+            "message": "Provider returned error",
+            "code": 429,
+            "metadata": {
+                "raw": '{"error": {"message": "rate limit exceeded for this model"}}',
+                "provider_name": "mock-upstream",
+            },
+        },
+    ],
+    ids=["nested-http-envelope", "flat-openai-sdk-body"],
+)
+def test_openrouter_wrapped_upstream_429_preserves_pool(monkeypatch, body):
+    """Nested and flat OpenRouter upstream 429s must not quarantine a healthy credential."""
 
-        def __str__(self):
-            # The SDK-facing summary omits the structured upstream metadata.
-            return "Error code: 429 - {'error': {'message': 'Provider returned error'}}"
+    class Wrapped429(Exception):
+        status_code = 429
 
-    from agent.error_classifier import _is_openrouter_upstream_error
+        def __init__(self, body):
+            super().__init__("Error code: 429 - Provider returned error")
+            self.body = body
 
-    exc = Wrapped429()
+    exc = Wrapped429(body)
     assert ac._is_rate_limit_error(exc)
     assert not ac._is_overloaded_error(exc)
-    assert _is_openrouter_upstream_error(exc.body, "openrouter")
 
-    def forbidden_pool_load(provider):
-        raise AssertionError(
-            "wrapped upstream 429 must not load or rotate the credential pool"
-        )
+    # Confirm the shared classifier recognizes the equivalent nested envelope.
+    from agent.error_classifier import _is_openrouter_upstream_error
 
-    monkeypatch.setattr(ac, "load_pool", forbidden_pool_load)
+    classifier_body = body if isinstance(body.get("error"), dict) else {"error": body}
+    assert _is_openrouter_upstream_error(classifier_body, "openrouter")
+
+    class _StubPool:
+        def __init__(self):
+            self.rotate_calls = []
+
+        def has_credentials(self):
+            return True
+
+        def try_refresh_current(self):
+            return None
+
+        def mark_exhausted_and_rotate(self, **kwargs):
+            self.rotate_calls.append(kwargs)
+            return object()
+
+    pool = _StubPool()
+    pool_requests = []
+    monkeypatch.setattr(
+        ac,
+        "pool_for_aux_provider",
+        lambda provider, normalized, loader: pool_requests.append((provider, normalized)) or pool,
+    )
+    monkeypatch.setattr(ac, "_evict_cached_clients", lambda provider: None)
+
     assert ac._recover_provider_pool("openrouter", exc) is False
+    assert pool_requests == [], "upstream 429 must return before requesting the credential pool"
+    assert pool.rotate_calls == [], "upstream 429 must not rotate a healthy credential"
+
+
+def test_openrouter_account_level_429_still_rotates_pool(monkeypatch):
+    """A genuine account-level OpenRouter 429 must still rotate credentials."""
+
+    class Account429(Exception):
+        status_code = 429
+        body = {
+            "error": {
+                "message": "Rate limit exceeded for this API key",
+                "code": 429,
+            },
+        }
+
+    pool_requests = []
+    class _StubPool:
+        def __init__(self):
+            self.rotate_calls = []
+
+        def has_credentials(self):
+            return True
+
+        def try_refresh_current(self):
+            return None
+
+        def mark_exhausted_and_rotate(self, **kwargs):
+            self.rotate_calls.append(kwargs)
+            return object()
+
+    pool = _StubPool()
+    monkeypatch.setattr(
+        ac,
+        "pool_for_aux_provider",
+        lambda provider, normalized, loader: pool_requests.append((provider, normalized)) or pool,
+    )
+    monkeypatch.setattr(ac, "_evict_cached_clients", lambda provider: None)
+
+    exc = Account429("Rate limit exceeded for this API key")
+    assert ac._is_rate_limit_error(exc)
+    assert ac._recover_provider_pool("openrouter", exc, failed_api_key="sk-failed") is True
+    assert pool_requests == [("openrouter", "openrouter")]
+    assert len(pool.rotate_calls) == 1
+    assert pool.rotate_calls[0]["status_code"] == 429
+    assert pool.rotate_calls[0]["api_key_hint"] == "sk-failed"
