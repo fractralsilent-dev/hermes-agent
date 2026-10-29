@@ -1,0 +1,79 @@
+name: FRA-11 full agent-suite validation
+
+on:
+  push:
+    branches:
+      - "fra11/agent-suite-gh-hosted-20261029"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fra11-agent-suite-validation-20261029
+  cancel-in-progress: false
+
+jobs:
+  agent-suite:
+    name: Full tests/agent suite (pinned candidate)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      OPENROUTER_API_KEY: ""
+      OPENAI_API_KEY: ""
+      NOUS_API_KEY: ""
+      ANTHROPIC_API_KEY: ""
+      GEMINI_API_KEY: ""
+      GOOGLE_API_KEY: ""
+      DEEPSEEK_API_KEY: ""
+      GROQ_API_KEY: ""
+      CEREBRAS_API_KEY: ""
+      TOGETHER_API_KEY: ""
+      XAI_API_KEY: ""
+      MISTRAL_API_KEY: ""
+      FIREWORKS_API_KEY: ""
+      BAI_API_KEY: ""
+    steps:
+      - name: Checkout exact candidate source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: 63be164df2056f2c22b45e0d06edc7320fc6fcd7
+          persist-credentials: false
+
+      - name: Verify candidate SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "63be164df2056f2c22b45e0d06edc7320fc6fcd7"
+          printf 'CANDIDATE_SHA_VERIFIED=%s\n' "$actual"
+
+      - name: Set up pinned test environment
+        id: setup-test-env
+        uses: ./.github/actions/setup-pm
+        with:
+          extras: '["all", "anthropic", "bedrock", "mistral", "fal", "modal", "daytona", "parallel-web", "keychain"]'
+          test-environment: "true"
+          prune-python-cache: "true"
+          save-tools-cache: "false"
+          save-python-cache: "false"
+          cache-node: "false"
+
+      - name: Install pinned lint tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m scripts.ci.python_packages "$(python -m scripts.code_health --print-pins)"
+
+      - name: Ruff candidate source and direct tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruff check agent/auxiliary_client.py tests/agent/test_auxiliary_client.py
+
+      - name: Run complete agent test suite
+        env:
+          HERMES_PYTHON: ${{ steps.setup-test-env.outputs.python-path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$HERMES_PYTHON" -m pytest -q --tb=short tests/agent
