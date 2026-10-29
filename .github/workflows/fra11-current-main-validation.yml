@@ -1,0 +1,62 @@
+name: FRA-11 current-main OpenRouter 429 port validation
+
+on:
+  pull_request:
+    paths:
+      - "agent/auxiliary_client.py"
+      - "tests/agent/test_auxiliary_client.py"
+      - ".github/workflows/fra11-current-main-validation.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fra11-current-main-validation-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  targeted-regression:
+    name: FRA-11 current-main targeted regression
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      OPENROUTER_API_KEY: ""
+      OPENAI_API_KEY: ""
+      NOUS_API_KEY: ""
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Set up pinned test environment
+        id: setup-test-env
+        uses: ./.github/actions/setup-pm
+        with:
+          extras: '["all", "anthropic", "bedrock", "mistral", "fal", "modal", "daytona", "parallel-web", "keychain"]'
+          test-environment: "true"
+          prune-python-cache: "true"
+          save-tools-cache: "false"
+          save-python-cache: "false"
+          cache-node: "false"
+
+      - name: Install pinned lint tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m scripts.ci.python_packages "$(python -m scripts.code_health --print-pins)"
+
+      - name: Ruff changed files
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruff check agent/auxiliary_client.py tests/agent/test_auxiliary_client.py
+
+      - name: Run auxiliary regression suite
+        env:
+          HERMES_PYTHON: ${{ steps.setup-test-env.outputs.python-path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$HERMES_PYTHON" -m pytest -q --tb=short tests/agent/test_auxiliary_client.py
