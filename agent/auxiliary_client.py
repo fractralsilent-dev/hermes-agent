@@ -3678,6 +3678,39 @@ def _recoverable_pool_provider(
     return None
 
 
+def _is_openrouter_upstream_rate_limit(exc: Exception) -> bool:
+    """True only for a structurally identified OpenRouter-wrapped upstream error.
+
+    OpenAI SDK versions may expose the inner OpenRouter error as either a nested
+    body["error"] envelope or a flat {message, code, metadata} body.
+    Require the exact wrapper message plus OpenRouter metadata so ordinary
+    account-level 429s do not suppress credential recovery.
+    """
+    body = getattr(exc, "body", None)
+    if not isinstance(body, dict):
+        response = getattr(exc, "response", None)
+        try:
+            body = response.json() if response is not None else None
+        except Exception:
+            body = None
+    if not isinstance(body, dict):
+        return False
+
+    nested = body.get("error")
+    if isinstance(nested, dict):
+        error_obj = nested
+    elif "error" not in body and isinstance(body.get("metadata"), dict):
+        error_obj = body
+    else:
+        return False
+
+    if str(error_obj.get("message") or "").strip().lower() != "provider returned error":
+        return False
+    metadata = error_obj.get("metadata")
+    return isinstance(metadata, dict) and (
+        "raw" in metadata or "provider_name" in metadata
+    )
+
 def _recover_provider_pool(provider: str, exc: Exception, *, failed_api_key: str = "") -> bool:
     """Try same-provider credential-pool recovery for auxiliary calls.
 
@@ -3685,6 +3718,18 @@ def _recover_provider_pool(provider: str, exc: Exception, *, failed_api_key: str
     another process already rotated (current() would be None).
     """
     normalized = _normalize_aux_provider(provider)
+    # Check before loading the pool: an upstream model 429 is not evidence
+    # that the user's OpenRouter credential is unhealthy.
+    if (
+        normalized == "openrouter"
+        and _is_rate_limit_error(exc)
+        and not _is_overloaded_error(exc)
+        and _is_openrouter_upstream_rate_limit(exc)
+    ):
+        logger.debug(
+            "Auxiliary client: OpenRouter upstream 429 — preserving credential health"
+        )
+        return False
     try:
         pool = pool_for_aux_provider(provider, normalized, load_pool)
     except Exception as load_exc:
