@@ -150,16 +150,16 @@ def test_openrouter_wrapped_upstream_429_preserves_pool(monkeypatch, body):
             return object()
 
     pool = _StubPool()
-    pool_loads = []
+    pool_requests = []
     monkeypatch.setattr(
         ac,
-        "load_pool",
-        lambda provider: pool_loads.append(provider) or pool,
+        "pool_for_aux_provider",
+        lambda provider, normalized, loader: pool_requests.append((provider, normalized)) or pool,
     )
     monkeypatch.setattr(ac, "_evict_cached_clients", lambda provider: None)
 
     assert ac._recover_provider_pool("openrouter", exc) is False
-    assert pool_loads == [], "upstream 429 must return before loading the credential pool"
+    assert pool_requests == [], "upstream 429 must return before requesting the credential pool"
     assert pool.rotate_calls == [], "upstream 429 must not rotate a healthy credential"
 
 
@@ -175,7 +175,7 @@ def test_openrouter_account_level_429_still_rotates_pool(monkeypatch):
             },
         }
 
-    pool_loads = []
+    pool_requests = []
     class _StubPool:
         def __init__(self):
             self.rotate_calls = []
@@ -193,15 +193,15 @@ def test_openrouter_account_level_429_still_rotates_pool(monkeypatch):
     pool = _StubPool()
     monkeypatch.setattr(
         ac,
-        "load_pool",
-        lambda provider: pool_loads.append(provider) or pool,
+        "pool_for_aux_provider",
+        lambda provider, normalized, loader: pool_requests.append((provider, normalized)) or pool,
     )
     monkeypatch.setattr(ac, "_evict_cached_clients", lambda provider: None)
 
     exc = Account429("Rate limit exceeded for this API key")
     assert ac._is_rate_limit_error(exc)
     assert ac._recover_provider_pool("openrouter", exc, failed_api_key="sk-failed") is True
-    assert pool_loads == ["openrouter"]
+    assert pool_requests == [("openrouter", "openrouter")]
     assert len(pool.rotate_calls) == 1
     assert pool.rotate_calls[0]["status_code"] == 429
     assert pool.rotate_calls[0]["api_key_hint"] == "sk-failed"
