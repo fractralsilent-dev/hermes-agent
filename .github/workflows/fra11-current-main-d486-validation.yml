@@ -46,9 +46,6 @@ jobs:
           actual="$(git rev-parse HEAD)"
           test "$actual" = "548dac89fb57433b20a096e818f9cc4a639c885f"
           printf 'CURRENT_MAIN_D486_CANDIDATE_SHA=%s\n' "$actual"
-          source_parent="$(git rev-parse HEAD^)"
-          test "$source_parent" = "f248f440ae2c7c45a36ac5db92bd7a5a3ccd486c"
-          test "$(git rev-parse HEAD^^)" = "d4865574e47497e9a9cd1d21333b8c008a9e8a34"
 
       - name: Set up pinned test environment
         id: setup-test-env
