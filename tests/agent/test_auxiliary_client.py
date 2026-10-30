@@ -23,6 +23,8 @@ from agent.auxiliary_client import (
     _resolve_codex_credential_and_base,
     _is_payment_error,
     _is_rate_limit_error,
+    _is_openrouter_upstream_rate_limit,
+    _recover_provider_pool,
     _is_model_not_found_error,
     _is_model_incompatible_error,
     _is_statusless_structured_provider_error,
@@ -5664,3 +5666,145 @@ class TestPreserveNamedCustomProviderWithBaseUrl:
             )
 
         assert resolved_provider == "xai-oauth"
+
+
+# FRA-11 regression: distinguish OpenRouter upstream 429 from account-level 429.
+@pytest.mark.parametrize(
+    "body",
+    [
+        {
+            "error": {
+                "message": "Provider returned error",
+                "metadata": {
+                    "raw": '{"error":{"message":"rate limit exceeded for this model"}}',
+                    "provider_name": "mock-upstream",
+                },
+            },
+        },
+        {
+            # Some OpenAI SDK versions expose the inner OpenRouter error directly.
+            "message": "Provider returned error",
+            "code": 429,
+            "metadata": {
+                "raw": '{"error":{"message":"rate limit exceeded for this model"}}',
+                "provider_name": "mock-upstream",
+            },
+        },
+    ],
+    ids=["nested-openrouter-envelope", "flat-openai-sdk-body"],
+)
+def test_openrouter_upstream_429_preserves_pool_before_lookup(monkeypatch, body):
+    class Wrapped429(Exception):
+        status_code = 429
+
+        def __init__(self, error_body):
+            super().__init__("Error code: 429 - Provider returned error")
+            self.body = error_body
+
+    exc = Wrapped429(body)
+    assert _is_rate_limit_error(exc) is True
+    pool_requests = []
+    monkeypatch.setattr(
+        "agent.auxiliary_client.pool_for_aux_provider",
+        lambda *args, **kwargs: pool_requests.append((args, kwargs)),
+    )
+
+    assert _recover_provider_pool("openrouter", exc) is False
+    assert pool_requests == [], "upstream 429 must return before credential-pool lookup"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"error": {"message": "Provider returned error"}},
+        {"error": {"message": "Provider returned error", "metadata": {}}},
+        {
+            "error": {
+                "message": "Provider returned error",
+                "metadata": {"provider_name": "   ", "raw": ""},
+            }
+        },
+    ],
+)
+def test_openrouter_upstream_detector_requires_nonempty_structured_metadata(body):
+    class Wrapped429(Exception):
+        status_code = 429
+
+        def __init__(self, error_body):
+            super().__init__("Error code: 429 - Provider returned error")
+            self.body = error_body
+
+    assert _is_openrouter_upstream_rate_limit(Wrapped429(body)) is False
+
+
+def test_openrouter_account_level_429_still_rotates_pool(monkeypatch):
+    class Account429(Exception):
+        status_code = 429
+        body = {
+            "error": {
+                "message": "Rate limit exceeded for this API key",
+                "code": 429,
+            },
+        }
+
+    class StubPool:
+        def __init__(self):
+            self.rotate_calls = []
+
+        def has_credentials(self):
+            return True
+
+        def try_refresh_current(self):
+            return None
+
+        def mark_exhausted_and_rotate(self, **kwargs):
+            self.rotate_calls.append(kwargs)
+            return object()
+
+    pool = StubPool()
+    monkeypatch.setattr(
+        "agent.auxiliary_client.pool_for_aux_provider",
+        lambda provider, normalized, loader: pool,
+    )
+    monkeypatch.setattr("agent.auxiliary_client._evict_cached_clients", lambda provider: None)
+
+    assert _recover_provider_pool("openrouter", Account429(), failed_api_key="sk-failed") is True
+    assert len(pool.rotate_calls) == 1
+    assert pool.rotate_calls[0]["status_code"] == 429
+    assert pool.rotate_calls[0]["api_key_hint"] == "sk-failed"
+
+
+def test_other_provider_does_not_use_openrouter_429_guard(monkeypatch):
+    class Wrapped429(Exception):
+        status_code = 429
+        body = {
+            "error": {
+                "message": "Provider returned error",
+                "metadata": {"provider_name": "mock-upstream"},
+            },
+        }
+
+    class StubPool:
+        def __init__(self):
+            self.rotate_calls = []
+
+        def has_credentials(self):
+            return True
+
+        def try_refresh_current(self):
+            return None
+
+        def mark_exhausted_and_rotate(self, **kwargs):
+            self.rotate_calls.append(kwargs)
+            return object()
+
+    pool = StubPool()
+    monkeypatch.setattr(
+        "agent.auxiliary_client.pool_for_aux_provider",
+        lambda provider, normalized, loader: pool,
+    )
+    monkeypatch.setattr("agent.auxiliary_client._evict_cached_clients", lambda provider: None)
+
+    assert _recover_provider_pool("other-provider", Wrapped429(), failed_api_key="sk-failed") is True
+    assert len(pool.rotate_calls) == 1
+    assert pool.rotate_calls[0]["status_code"] == 429
