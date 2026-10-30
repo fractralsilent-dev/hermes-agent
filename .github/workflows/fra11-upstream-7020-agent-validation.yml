@@ -54,10 +54,10 @@ jobs:
           actual="$(git rev-parse HEAD)"
           test "$actual" = "$GITHUB_SHA"
           git merge-base --is-ancestor "$EXPECTED_UPSTREAM_BASE" HEAD
-          printf 'FRA11_CANDIDATE_SHA=%s\\n' "$actual"
-          printf 'UPSTREAM_BASE_SHA=%s\\n' "$EXPECTED_UPSTREAM_BASE"
+          echo "FRA11_CANDIDATE_SHA=$actual"
+          echo "UPSTREAM_BASE_SHA=$EXPECTED_UPSTREAM_BASE"
           changed_files="$(git diff --name-only "$EXPECTED_UPSTREAM_BASE"...HEAD)"
-          printf '%s\\n' "$changed_files"
+          echo "$changed_files"
           while IFS= read -r changed_file; do
             [ -z "$changed_file" ] && continue
             case "$changed_file" in
@@ -70,7 +70,7 @@ jobs:
         id: setup-test-env
         uses: ./.github/actions/setup-pm
         with:
-          extras: '[ "all", "anthropic", "bedrock", "mistral", "fal", "modal", "daytona", "parallel-web", "keychain" ]'
+          extras: '["all", "anthropic", "bedrock", "mistral", "fal", "modal", "daytona", "parallel-web", "keychain"]'
           test-environment: "true"
           prune-python-cache: "true"
           save-tools-cache: "false"
