@@ -1,0 +1,68 @@
+name: FRA-11 canonical tests-agent validation
+
+on:
+  push:
+    branches:
+      - "fra11/canonical-agent-suite-validation-20261030"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fra11-canonical-agent-suite-validation-20261030
+  cancel-in-progress: false
+
+jobs:
+  agent-suite:
+    name: Canonical per-file tests/agent suite (pinned PR #2 source)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      OPENROUTER_API_KEY: ""
+      OPENAI_API_KEY: ""
+      NOUS_API_KEY: ""
+      ANTHROPIC_API_KEY: ""
+      GEMINI_API_KEY: ""
+      GOOGLE_API_KEY: ""
+      DEEPSEEK_API_KEY: ""
+      GROQ_API_KEY: ""
+      CEREBRAS_API_KEY: ""
+      TOGETHER_API_KEY: ""
+      XAI_API_KEY: ""
+      MISTRAL_API_KEY: ""
+      FIREWORKS_API_KEY: ""
+      BAI_API_KEY: ""
+      HERMES_TEST_WORKERS: "4"
+    steps:
+      - name: Checkout exact PR #2 source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 63be164df2056f2c22b45e0d06edc7320fc6fcd7
+          persist-credentials: false
+
+      - name: Verify exact source SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "63be164df2056f2c22b45e0d06edc7320fc6fcd7"
+          printf 'CANONICAL_AGENT_SUITE_SOURCE_SHA=%s\\n' "$actual"
+
+      - name: Set up pinned test environment
+        id: setup-test-env
+        uses: ./.github/actions/setup-pm
+        with:
+          extras: '["all", "anthropic", "bedrock", "mistral", "fal", "modal", "daytona", "parallel-web", "keychain"]'
+          test-environment: "true"
+          prune-python-cache: "true"
+          save-tools-cache: "false"
+          save-python-cache: "false"
+          cache-node: "false"
+
+      - name: Run tests/agent through canonical per-file runner
+        env:
+          HERMES_PYTHON: ${{ steps.setup-test-env.outputs.python-path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts/run_tests.sh tests/agent/ -j 4
