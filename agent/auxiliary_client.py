@@ -3678,6 +3678,46 @@ def _recoverable_pool_provider(
     return None
 
 
+def _is_openrouter_upstream_rate_limit(exc: Exception) -> bool:
+    """Identify an OpenRouter-wrapped upstream error, not an account-level 429.
+
+    OpenAI SDK versions may expose OpenRouter's inner error as either a nested
+    body["error"] envelope or a flat {message, code, metadata} body. Require the
+    exact wrapper message plus structured OpenRouter metadata before suppressing
+    credential recovery; ordinary account-level rate limits still rotate.
+    """
+    body = getattr(exc, "body", None)
+    if not isinstance(body, dict):
+        response = getattr(exc, "response", None)
+        try:
+            body = response.json() if response is not None else None
+        except Exception:
+            body = None
+    if not isinstance(body, dict):
+        return False
+
+    nested = body.get("error")
+    if isinstance(nested, dict):
+        error_obj = nested
+    elif "error" not in body and isinstance(body.get("metadata"), dict):
+        error_obj = body
+    else:
+        return False
+
+    if str(error_obj.get("message") or "").strip().lower() != "provider returned error":
+        return False
+    metadata = error_obj.get("metadata")
+    if not isinstance(metadata, dict):
+        return False
+    raw = metadata.get("raw")
+    provider_name = metadata.get("provider_name")
+    return (
+        isinstance(raw, str) and bool(raw.strip())
+    ) or (
+        isinstance(provider_name, str) and bool(provider_name.strip())
+    )
+
+
 def _recover_provider_pool(provider: str, exc: Exception, *, failed_api_key: str = "") -> bool:
     """Try same-provider credential-pool recovery for auxiliary calls.
 
@@ -3685,6 +3725,18 @@ def _recover_provider_pool(provider: str, exc: Exception, *, failed_api_key: str
     another process already rotated (current() would be None).
     """
     normalized = _normalize_aux_provider(provider)
+    # An OpenRouter-wrapped upstream 429 is a provider/model capacity signal,
+    # not proof that the user's OpenRouter API credential is unhealthy.
+    if (
+        normalized == "openrouter"
+        and _is_rate_limit_error(exc)
+        and not _is_overloaded_error(exc)
+        and _is_openrouter_upstream_rate_limit(exc)
+    ):
+        logger.debug(
+            "Auxiliary client: OpenRouter upstream 429 — preserving credential health"
+        )
+        return False
     try:
         pool = pool_for_aux_provider(provider, normalized, load_pool)
     except Exception as load_exc:
