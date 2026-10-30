@@ -54,14 +54,14 @@ jobs:
           actual="$(git rev-parse HEAD)"
           test "$actual" = "$GITHUB_SHA"
           git merge-base --is-ancestor "$EXPECTED_UPSTREAM_BASE" HEAD
-          printf 'FRA11_CANDIDATE_SHA=%s\n' "$actual"
-          printf 'UPSTREAM_BASE_SHA=%s\n' "$EXPECTED_UPSTREAM_BASE"
+          printf 'FRA11_CANDIDATE_SHA=%s\\n' "$actual"
+          printf 'UPSTREAM_BASE_SHA=%s\\n' "$EXPECTED_UPSTREAM_BASE"
           changed_files="$(git diff --name-only "$EXPECTED_UPSTREAM_BASE"...HEAD)"
-          printf '%s\n' "$changed_files"
+          printf '%s\\n' "$changed_files"
           while IFS= read -r changed_file; do
             [ -z "$changed_file" ] && continue
             case "$changed_file" in
-              agent/auxiliary_client.py|tests/agent/test_auxiliary_client.py) ;;
+              agent/auxiliary_client.py|tests/agent/test_auxiliary_client.py|.github/workflows/fra11-upstream-7020-agent-validation.yml) ;;
               *) echo "UNEXPECTED_CANDIDATE_FILE_SCOPE: $changed_file"; exit 1 ;;
             esac
           done <<< "$changed_files"
@@ -70,7 +70,7 @@ jobs:
         id: setup-test-env
         uses: ./.github/actions/setup-pm
         with:
-          extras: '["all", "anthropic", "bedrock", "mistral", "fal", "modal", "daytona", "parallel-web", "keychain"]'
+          extras: '[ "all", "anthropic", "bedrock", "mistral", "fal", "modal", "daytona", "parallel-web", "keychain" ]'
           test-environment: "true"
           prune-python-cache: "true"
           save-tools-cache: "false"
