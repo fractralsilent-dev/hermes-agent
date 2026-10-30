@@ -1,0 +1,68 @@
+name: FRA-11 canonical tests-agent validation (latest upstream d486)
+
+on:
+  push:
+    branches:
+      - "fra11/canonical-agent-suite-d486-validation-20261030"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fra11-canonical-agent-suite-d486-validation-20261030
+  cancel-in-progress: false
+
+jobs:
+  agent-suite:
+    name: Canonical per-file tests/agent suite (latest-upstream d486 candidate)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      OPENROUTER_API_KEY: ""
+      OPENAI_API_KEY: ""
+      NOUS_API_KEY: ""
+      ANTHROPIC_API_KEY: ""
+      GEMINI_API_KEY: ""
+      GOOGLE_API_KEY: ""
+      DEEPSEEK_API_KEY: ""
+      GROQ_API_KEY: ""
+      CEREBRAS_API_KEY: ""
+      TOGETHER_API_KEY: ""
+      XAI_API_KEY: ""
+      MISTRAL_API_KEY: ""
+      FIREWORKS_API_KEY: ""
+      BAI_API_KEY: ""
+      HERMES_TEST_WORKERS: "4"
+    steps:
+      - name: Checkout exact latest-upstream d486 candidate
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 548dac89fb57433b20a096e818f9cc4a639c885f
+          persist-credentials: false
+
+      - name: Verify exact candidate source SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "548dac89fb57433b20a096e818f9cc4a639c885f"
+          printf 'CANONICAL_AGENT_SUITE_SOURCE_SHA=%s\n' "$actual"
+
+      - name: Set up pinned test environment
+        id: setup-test-env
+        uses: ./.github/actions/setup-pm
+        with:
+          extras: '["all", "anthropic", "bedrock", "mistral", "fal", "modal", "daytona", "parallel-web", "keychain"]'
+          test-environment: "true"
+          prune-python-cache: "true"
+          save-tools-cache: "false"
+          save-python-cache: "false"
+          cache-node: "false"
+
+      - name: Run tests/agent through canonical per-file runner
+        env:
+          HERMES_PYTHON: ${{ steps.setup-test-env.outputs.python-path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts/run_tests.sh tests/agent/ -j 4
