@@ -38,6 +38,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: 34457309646ac5a13e28fba9f517b6f20ccfd24d
+          fetch-depth: 2
           persist-credentials: false
 
       - name: Verify candidate SHA and exact upstream parent
@@ -48,8 +49,8 @@ jobs:
           parent="$(git rev-parse HEAD^)"
           test "$actual" = "34457309646ac5a13e28fba9f517b6f20ccfd24d"
           test "$parent" = "5057eaa3a4d0cbef0e30078418a5115faa62889e"
-          printf 'FRA11_PRODUCT_SHA=%s\n' "$actual"
-          printf 'UPSTREAM_BASE_SHA=%s\n' "$parent"
+          printf 'FRA11_PRODUCT_SHA=%s\\n' "$actual"
+          printf 'UPSTREAM_BASE_SHA=%s\\n' "$parent"
 
       - name: Set up pinned test environment
         id: setup-test-env
