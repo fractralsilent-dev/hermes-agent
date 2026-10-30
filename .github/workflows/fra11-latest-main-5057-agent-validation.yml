@@ -1,0 +1,83 @@
+name: FRA-11 latest-main 5057 canonical agent validation
+
+on:
+  push:
+    branches:
+      - "fra11/openrouter-429-guard-current-main-5057-20261031"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fra11-latest-main-5057-agent-validation-20261031
+  cancel-in-progress: false
+
+jobs:
+  agent-suite:
+    name: Ruff + canonical tests/agent (5057 latest-main candidate)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      OPENROUTER_API_KEY: ""
+      OPENAI_API_KEY: ""
+      NOUS_API_KEY: ""
+      ANTHROPIC_API_KEY: ""
+      GEMINI_API_KEY: ""
+      GOOGLE_API_KEY: ""
+      DEEPSEEK_API_KEY: ""
+      GROQ_API_KEY: ""
+      CEREBRAS_API_KEY: ""
+      TOGETHER_API_KEY: ""
+      XAI_API_KEY: ""
+      MISTRAL_API_KEY: ""
+      FIREWORKS_API_KEY: ""
+      BAI_API_KEY: ""
+      HERMES_TEST_WORKERS: "4"
+    steps:
+      - name: Checkout exact latest-main candidate
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 34457309646ac5a13e28fba9f517b6f20ccfd24d
+          persist-credentials: false
+
+      - name: Verify candidate SHA and exact upstream parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          parent="$(git rev-parse HEAD^)"
+          test "$actual" = "34457309646ac5a13e28fba9f517b6f20ccfd24d"
+          test "$parent" = "5057eaa3a4d0cbef0e30078418a5115faa62889e"
+          printf 'FRA11_PRODUCT_SHA=%s\n' "$actual"
+          printf 'UPSTREAM_BASE_SHA=%s\n' "$parent"
+
+      - name: Set up pinned test environment
+        id: setup-test-env
+        uses: ./.github/actions/setup-pm
+        with:
+          extras: '["all", "anthropic", "bedrock", "mistral", "fal", "modal", "daytona", "parallel-web", "keychain"]'
+          test-environment: "true"
+          prune-python-cache: "true"
+          save-tools-cache: "false"
+          save-python-cache: "false"
+          cache-node: "false"
+
+      - name: Install pinned Ruff
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m scripts.ci.python_packages "$(python -m scripts.code_health --print-pins)"
+
+      - name: Run blocking Ruff check
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruff check .
+
+      - name: Run tests/agent through canonical per-file runner
+        env:
+          HERMES_PYTHON: ${{ steps.setup-test-env.outputs.python-path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts/run_tests.sh tests/agent/ -j 4
