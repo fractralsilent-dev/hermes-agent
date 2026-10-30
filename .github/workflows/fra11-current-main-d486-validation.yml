@@ -45,7 +45,7 @@ jobs:
           set -euo pipefail
           actual="$(git rev-parse HEAD)"
           test "$actual" = "548dac89fb57433b20a096e818f9cc4a639c885f"
-          printf 'CURRENT_MAIN_D486_CANDIDATE_SHA=%s\\n' "$actual"
+          printf 'CURRENT_MAIN_D486_CANDIDATE_SHA=%s\n' "$actual"
           source_parent="$(git rev-parse HEAD^)"
           test "$source_parent" = "f248f440ae2c7c45a36ac5db92bd7a5a3ccd486c"
           test "$(git rev-parse HEAD^^)" = "d4865574e47497e9a9cd1d21333b8c008a9e8a34"
@@ -79,15 +79,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          scripts/run_tests.sh -j 4 \\
-            tests/agent/test_auxiliary_client.py \\
-            tests/agent/test_auxiliary_error_classification.py \\
-            tests/agent/test_auxiliary_transient_retry.py \\
-            tests/agent/test_error_classifier.py \\
-            tests/agent/test_error_classifier_observed.py \\
-            tests/agent/test_openrouter_response_cache.py \\
-            tests/agent/test_rate_limit_reset_hint.py \\
-            tests/agent/test_rate_limit_tracker.py \\
+          scripts/run_tests.sh -j 4 \
+            tests/agent/test_auxiliary_client.py \
+            tests/agent/test_auxiliary_error_classification.py \
+            tests/agent/test_auxiliary_transient_retry.py \
+            tests/agent/test_error_classifier.py \
+            tests/agent/test_error_classifier_observed.py \
+            tests/agent/test_openrouter_response_cache.py \
+            tests/agent/test_rate_limit_reset_hint.py \
+            tests/agent/test_rate_limit_tracker.py \
             tests/agent/test_free_tier_rate_limit_class.py
 
       - name: Adjacent auxiliary pool and fallback regressions
@@ -96,17 +96,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          scripts/run_tests.sh -j 4 \\
-            tests/agent/test_auxiliary_anthropic_pool_fallback_regression.py \\
-            tests/agent/test_auxiliary_auth_rung_fallthrough.py \\
-            tests/agent/test_auxiliary_client_cache_eviction.py \\
-            tests/agent/test_auxiliary_client_cache_follows_credential.py \\
-            tests/agent/test_auxiliary_client_resolve_dedup.py \\
-            tests/agent/test_auxiliary_concurrency.py \\
-            tests/agent/test_auxiliary_fallback_multihop.py \\
-            tests/agent/test_auxiliary_parameter_rung_chaining.py \\
-            tests/agent/test_auxiliary_runtime_cache_key.py \\
-            tests/agent/test_auxiliary_hooks.py \\
-            tests/agent/test_auxiliary_openrouter_max_tokens.py \\
-            tests/agent/test_auxiliary_client_nous_401_cache_key.py \\
+          scripts/run_tests.sh -j 4 \
+            tests/agent/test_auxiliary_anthropic_pool_fallback_regression.py \
+            tests/agent/test_auxiliary_auth_rung_fallthrough.py \
+            tests/agent/test_auxiliary_client_cache_eviction.py \
+            tests/agent/test_auxiliary_client_cache_follows_credential.py \
+            tests/agent/test_auxiliary_client_resolve_dedup.py \
+            tests/agent/test_auxiliary_concurrency.py \
+            tests/agent/test_auxiliary_fallback_multihop.py \
+            tests/agent/test_auxiliary_parameter_rung_chaining.py \
+            tests/agent/test_auxiliary_runtime_cache_key.py \
+            tests/agent/test_auxiliary_hooks.py \
+            tests/agent/test_auxiliary_openrouter_max_tokens.py \
+            tests/agent/test_auxiliary_client_nous_401_cache_key.py \
             tests/agent/test_auxiliary_unavailable_nous_reason.py
