@@ -5895,3 +5895,58 @@ def test_openrouter_overloaded_429_keeps_existing_overload_policy(monkeypatch):
     assert _recover_provider_pool("openrouter", exc, failed_api_key="sk-failed") is False
     assert pool_requests == [("openrouter", "openrouter")]
     assert pool.rotate_calls == []
+
+def test_openrouter_sdk_rate_limit_error_uses_nested_raw_overload_for_classification(monkeypatch):
+    import httpx
+    from openai import RateLimitError
+
+    body = {
+        "error": {
+            "message": "Provider returned error",
+            "metadata": {
+                "raw": '{"error":{"message":"upstream overloaded at capacity"}}',
+                "provider_name": "mock-upstream",
+            },
+        },
+    }
+    request = httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions")
+    response = httpx.Response(429, json=body, request=request)
+    # Match openai-python 2.54.0's _make_status_error_from_response message construction.
+    exc = RateLimitError(
+        f"Error code: {response.status_code} - {body}",
+        response=response,
+        body=body,
+    )
+
+    assert "upstream overloaded at capacity" in str(exc)
+    assert _is_rate_limit_error(exc) is True
+    assert _is_openrouter_upstream_rate_limit(exc) is True
+    assert _is_overloaded_error(exc) is True
+
+    pool_requests = []
+
+    class StubPool:
+        def __init__(self):
+            self.rotate_calls = []
+
+        def has_credentials(self):
+            return True
+
+        def try_refresh_current(self):
+            return None
+
+        def mark_exhausted_and_rotate(self, **kwargs):
+            self.rotate_calls.append(kwargs)
+            return object()
+
+    pool = StubPool()
+    monkeypatch.setattr(
+        "agent.auxiliary_client.pool_for_aux_provider",
+        lambda provider, normalized, loader: pool_requests.append((provider, normalized)) or pool,
+    )
+    monkeypatch.setattr("agent.auxiliary_client._evict_cached_clients", lambda provider: None)
+
+    assert _recover_provider_pool("openrouter", exc, failed_api_key="sk-failed") is False
+    assert pool_requests == [("openrouter", "openrouter")]
+    assert pool.rotate_calls == []
+
