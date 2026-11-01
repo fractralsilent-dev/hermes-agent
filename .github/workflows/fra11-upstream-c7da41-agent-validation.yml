@@ -1,4 +1,5 @@
 name: FRA-11 current-main c7da41 OpenRouter 429 guard validation
+# Triggered by FRA-11 validation-base/candidate synchronization; no runtime behavior change.
 
 on:
   pull_request:
