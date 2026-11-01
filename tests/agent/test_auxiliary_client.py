@@ -23,6 +23,7 @@ from agent.auxiliary_client import (
     _resolve_codex_credential_and_base,
     _is_payment_error,
     _is_rate_limit_error,
+    _is_overloaded_error,
     _is_openrouter_upstream_rate_limit,
     _recover_provider_pool,
     _is_model_not_found_error,
@@ -5808,3 +5809,89 @@ def test_other_provider_does_not_use_openrouter_429_guard(monkeypatch):
     assert _recover_provider_pool("other-provider", Wrapped429(), failed_api_key="sk-failed") is True
     assert len(pool.rotate_calls) == 1
     assert pool.rotate_calls[0]["status_code"] == 429
+
+@pytest.mark.parametrize(
+    "body_state",
+    ["absent", "non-dict"],
+    ids=["response-json-when-body-absent", "response-json-when-body-non-dict"],
+)
+def test_openrouter_upstream_429_uses_response_json_fallback(monkeypatch, body_state):
+    response_body = {
+        "error": {
+            "message": "Provider returned error",
+            "metadata": {
+                "raw": '{"error":{"message":"rate limit exceeded for this model"}}',
+                "provider_name": "mock-upstream",
+            },
+        },
+    }
+
+    class ResponseWrapped429(Exception):
+        status_code = 429
+
+        def __init__(self):
+            super().__init__("Error code: 429 - Provider returned error")
+            self.response = SimpleNamespace(json=lambda: response_body)
+            if body_state == "non-dict":
+                self.body = "not-a-dict"
+
+    exc = ResponseWrapped429()
+    assert _is_rate_limit_error(exc) is True
+    assert _is_openrouter_upstream_rate_limit(exc) is True
+
+    pool_requests = []
+    monkeypatch.setattr(
+        "agent.auxiliary_client.pool_for_aux_provider",
+        lambda *args, **kwargs: pool_requests.append((args, kwargs)),
+    )
+
+    assert _recover_provider_pool("openrouter", exc) is False
+    assert pool_requests == [], "response.json fallback must preserve upstream-429 pool short-circuit"
+
+
+def test_openrouter_overloaded_429_keeps_existing_overload_policy(monkeypatch):
+    class OverloadedWrapped429(Exception):
+        status_code = 429
+        body = {
+            "error": {
+                "message": "Provider returned error",
+                "metadata": {
+                    "raw": '{"error":{"message":"upstream overloaded at capacity"}}',
+                    "provider_name": "mock-upstream",
+                },
+            },
+        }
+
+    exc = OverloadedWrapped429("Error code: 429 - upstream overloaded at capacity")
+    assert _is_rate_limit_error(exc) is True
+    assert _is_overloaded_error(exc) is True
+    assert _is_openrouter_upstream_rate_limit(exc) is True
+
+    pool_requests = []
+
+    class StubPool:
+        def __init__(self):
+            self.rotate_calls = []
+
+        def has_credentials(self):
+            return True
+
+        def try_refresh_current(self):
+            return None
+
+        def mark_exhausted_and_rotate(self, **kwargs):
+            self.rotate_calls.append(kwargs)
+            return object()
+
+    pool = StubPool()
+    monkeypatch.setattr(
+        "agent.auxiliary_client.pool_for_aux_provider",
+        lambda provider, normalized, loader: pool_requests.append((provider, normalized)) or pool,
+    )
+    monkeypatch.setattr("agent.auxiliary_client._evict_cached_clients", lambda provider: None)
+
+    # Overloaded is excluded from both the new upstream-429 short-circuit and
+    # the ordinary 429 rotation path: preserve the existing overload/backoff behavior.
+    assert _recover_provider_pool("openrouter", exc, failed_api_key="sk-failed") is False
+    assert pool_requests == [("openrouter", "openrouter")]
+    assert pool.rotate_calls == []
