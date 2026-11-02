@@ -38,10 +38,10 @@ concurrency:
 jobs:
   test:
     # Sixteen deterministic slices use standard 4-vCPU GitHub-hosted runners.
-    # This preserves the former aggregate CPU parallelism without paid larger
-    # runners. At most 12 slices run at once, leaving capacity for other required
-    # lanes under the Free-plan concurrency ceiling. The slicer partitions from
-    # the checkout alone, so every slice agrees and no test files are dropped.
+    # At most 12 slices run at once (up to 48 test workers), leaving capacity
+    # for other required lanes under the Free-plan concurrency ceiling. The
+    # slicer partitions from the checkout alone, so every slice agrees and
+    # no test files are dropped; full file coverage is retained.
     name: Run tests (${{ matrix.slice }}/16)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
