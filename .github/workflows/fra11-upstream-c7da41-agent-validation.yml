@@ -110,4 +110,4 @@ jobs:
     if: github.event_name == 'pull_request'
     uses: ./.github/workflows/contributor-check.yml
     with:
-      commit: \${{ github.sha }}
+      commit: ${{ github.sha }}
