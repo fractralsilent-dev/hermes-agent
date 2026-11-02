@@ -82,8 +82,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Two slices: on the old free standard runner (3 cores, 3 workers) one lane ran
-          # ~7.5 min and became the slowest required job once the Linux suite split.
+          # Standard public runners preserve platform coverage without paid Blacksmith.
+          # macOS retains two 3-core slices; Windows uses four workers per 4-vCPU host
+          # to avoid starving nested PowerShell process trees.
           - name: macOS-only tests (1/2)
             runner: macos-15
             marker: macos
