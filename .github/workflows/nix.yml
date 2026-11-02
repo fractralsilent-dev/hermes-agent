@@ -79,15 +79,15 @@ jobs:
     # Release runs force the lane: a stable candidate must build the flake
     # no matter what its diff touches.
     if: needs.detect.outputs.nix == 'true' || inputs.release == true
-    # The build compiles the package and its whole dependency closure, so this
-    # takes minutes and not seconds when the cache misses. `nix flake check`
-    # builds 21 checks, and --max-jobs defaults to the core count. It uses the
-    # wider runner with no more configuration.
-    runs-on: blacksmith-32vcpu-ubuntu-2404
-    timeout-minutes: 60
+    # Validation-only fork path: standard ubuntu-24.04 runners are free for
+    # public repositories (4 CPU / 16 GB RAM). Limit Nix to two parallel
+    # derivations and allow a longer cold-cache build rather than requiring
+    # the upstream Blacksmith 32-vCPU pool.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
     steps:
       - name: Checkout code
-        uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a  # v1
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
         with:
           # A stable run passes the claim commit. Every other event tests its own head SHA.
           ref: ${{ inputs.commit || github.sha }}
@@ -103,6 +103,8 @@ jobs:
             # Each source archive is fetched one time in a run, and not one
             # time for each evaluation.
             tarball-ttl = 3600
+            max-jobs = 2
+            cores = 2
 
       # Restores /nix/store from the GitHub Actions cache. The store holds the
       # whole dependency closure, so a hit turns a build of several minutes
