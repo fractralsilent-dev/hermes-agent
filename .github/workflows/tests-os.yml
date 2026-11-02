@@ -97,7 +97,7 @@ jobs:
             runner: windows-2025
             marker: windows
           - name: Windows-only tests (arm64, 1/2)
-            runner: windows-11-arm
+            runner: windows-2025
             marker: windows
             timeout: 60
             slice: 1/2
