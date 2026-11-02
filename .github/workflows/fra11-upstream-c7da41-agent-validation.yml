@@ -9,13 +9,6 @@ on:
       - .github/workflows/fra11-upstream-c7da41-agent-validation.yml
       - agent/auxiliary_client.py
       - tests/agent/test_auxiliary_client.py
-  push:
-    branches:
-      - fra11/openrouter-429-rebased-c7da41-20261102
-    paths:
-      - .github/workflows/fra11-upstream-c7da41-agent-validation.yml
-      - agent/auxiliary_client.py
-      - tests/agent/test_auxiliary_client.py
   workflow_dispatch:
 
 permissions:
@@ -108,7 +101,7 @@ jobs:
 
   contributor-attribution:
     name: Contributor attribution (shared privacy-safe gate)
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    if: github.event_name == 'pull_request'
     uses: ./.github/workflows/contributor-check.yml
     with:
       commit: ${{ github.sha }}
