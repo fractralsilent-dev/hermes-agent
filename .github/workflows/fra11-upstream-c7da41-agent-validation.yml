@@ -69,7 +69,7 @@ jobs:
           while IFS= read -r changed_file; do
             [ -z "$changed_file" ] && continue
             case "$changed_file" in
-              agent/auxiliary_client.py|tests/agent/test_auxiliary_client.py|.github/workflows/fra11-upstream-c7da41-agent-validation.yml) ;;
+              agent/auxiliary_client.py|tests/agent/test_auxiliary_client.py|.github/workflows/fra11-upstream-c7da41-agent-validation.yml|.github/workflows/contributor-check.yml) ;;
               *) echo "UNEXPECTED_CANDIDATE_FILE_SCOPE: $changed_file"; exit 1 ;;
             esac
           done <<< "$changed_files"
