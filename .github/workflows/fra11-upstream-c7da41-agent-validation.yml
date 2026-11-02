@@ -104,3 +104,10 @@ jobs:
         run: |
           set -euo pipefail
           scripts/run_tests.sh tests/agent/ -j 4
+
+  contributor-attribution:
+    name: Contributor attribution (shared privacy-safe gate)
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/contributor-check.yml
+    with:
+      commit: \${{ github.sha }}
