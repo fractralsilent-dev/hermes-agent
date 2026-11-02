@@ -81,9 +81,9 @@ jobs:
     if: needs.detect.outputs.nix == 'true' || inputs.release == true
     # The build compiles the package and its whole dependency closure, so this
     # takes minutes and not seconds when the cache misses. `nix flake check`
-    # builds 21 checks, and --max-jobs defaults to the core count. It uses the
-    # wider runner with no more configuration.
-    runs-on: blacksmith-32vcpu-ubuntu-2404
+    # builds 21 checks, and --max-jobs defaults to the cores available to Nix.
+    # The standard 4-vCPU runner keeps this public-repository lane free.
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - name: Checkout code
