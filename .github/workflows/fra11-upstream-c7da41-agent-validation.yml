@@ -23,7 +23,7 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: fra11-upstream-c7da41-agent-validation
+  group: fra11-upstream-c7da41-agent-validation-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: false
 
 jobs:
