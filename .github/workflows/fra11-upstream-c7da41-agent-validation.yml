@@ -20,6 +20,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: fra11-upstream-c7da41-agent-validation
@@ -107,7 +108,7 @@ jobs:
 
   contributor-attribution:
     name: Contributor attribution (shared privacy-safe gate)
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
     uses: ./.github/workflows/contributor-check.yml
     with:
       commit: ${{ github.sha }}
