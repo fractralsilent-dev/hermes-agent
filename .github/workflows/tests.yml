@@ -37,18 +37,17 @@ concurrency:
 
 jobs:
   test:
-    # Sixteen standard 4-vCPU runners preserve the old aggregate 64-worker
-    # capacity (2 x 32 workers) without a paid Blacksmith dependency.
-    # The canonical runner computes the same deterministic LPT partition from
-    # the checkout alone, so every slice uses the same file assignment.
-    name: Run tests (${{ matrix.slice }}/16)
+    # Eight standard 4-vCPU runners keep 32 workers across independent VMs.
+    # This trades some wall time for no paid Blacksmith dependency while keeping
+    # the complete suite and deterministic LPT file partitioning unchanged.
+    name: Run tests (${{ matrix.slice }}/8)
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
       fail-fast: false
-      max-parallel: 16
+      max-parallel: 8
       matrix:
-        slice: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+        slice: [1, 2, 3, 4, 5, 6, 7, 8]
     steps:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
@@ -112,7 +111,7 @@ jobs:
         run: |
           scripts/run_tests.sh
         env:
-          HERMES_TEST_SLICE: ${{ matrix.slice }}/16
+          HERMES_TEST_SLICE: ${{ matrix.slice }}/8
           HERMES_TEST_WORKERS: 4
           HERMES_TEST_FILE_TIMEOUT: 600
           # Ensure tests don't accidentally call real APIs
