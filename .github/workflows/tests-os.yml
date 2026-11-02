@@ -19,9 +19,9 @@ name: OS-specific tests
 # platforms`` expression selects "this host's own marked tests" on either
 # lane — the helper narrows WHICH FILES get imported first.)
 #
-# Deliberately NOT sliced. The marked set is small (tens of tests, not
-# thousands), so one plain ``pytest`` process per OS is both faster and far
-# less machinery than the per-file parallel runner the Linux lane uses.
+# The marked set is small (tens of tests, not thousands). Each matrix row
+# remains a plain pytest run over the selected OS-marked files; macOS and
+# Windows ARM64 retain their existing deterministic file-level slices.
 # Each lane FAILS when it selects zero tests (pytest exit code 5) — a
 # renamed marker or bad selector can never report a green job that ran
 # nothing.
