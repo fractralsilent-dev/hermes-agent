@@ -27,80 +27,199 @@ jobs:
           ref: ${{ inputs.commit }}
           fetch-depth: 0  # Full history needed for git log
 
-      - name: Check for unmapped contributor emails
+      - name: Check for unmapped contributor identities
         id: check-emails
+        env:
+          EVENT_NAME: \${{ github.event_name }}
+          PR_BASE_SHA: \${{ github.event.pull_request.base.sha }}
+          PR_AUTHOR_ID: \${{ github.event.pull_request.user.id }}
+          GH_TOKEN: \${{ github.token }}
+          REPOSITORY: \${{ github.repository }}
         run: |
-          # Get the merge base between this PR and main
-          MERGE_BASE=$(git merge-base origin/main HEAD)
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          import sys
+          import urllib.error
+          import urllib.request
+          from collections import defaultdict
+          from pathlib import Path
 
-          # Find any new author emails in this PR's commits
-          NEW_EMAILS=$(git log ${MERGE_BASE}..HEAD --format='%ae' --no-merges | sort -u)
+          root = Path.cwd()
+          event_name = os.environ.get("EVENT_NAME", "")
+          repository = os.environ.get("REPOSITORY", "")
+          token = os.environ.get("GH_TOKEN", "")
+          pr_author_id_raw = os.environ.get("PR_AUTHOR_ID", "")
+          base_sha = os.environ.get("PR_BASE_SHA", "")
 
-          if [ -z "$NEW_EMAILS" ]; then
-            echo "No new commits to check."
-            echo "review_status=[]" >> "$GITHUB_OUTPUT"
-            echo "review_status=[]" > review-status.json
-            exit 0
-          fi
+          def fail_closed(message):
+              print(f"::error::{message}")
+              sys.exit(1)
 
-          # An email is mapped if it has a file in contributors/emails/
-          # (one file per email — conflict-free) or an entry in the frozen
-          # legacy AUTHOR_MAP in scripts/releases/authors_legacy.py.
-          MISSING=""
-          while IFS= read -r email; do
-            # Skip teknium and bot emails
-            case "$email" in
-              *teknium*|*noreply@github.com*|*dependabot*|*github-actions*|*anthropic.com*|*cursor.com*)
-                continue ;;
-            esac
+          # Pull requests must be compared to their actual event base SHA.
+          # Non-PR callers retain the existing origin/main behavior.
+          if event_name == "pull_request":
+              if not re.fullmatch(r"[0-9a-fA-F]{40}", base_sha):
+                  fail_closed("Pull-request base SHA is missing or invalid; contributor check stopped.")
+              base = base_sha.lower()
+              if subprocess.run(
+                  ["git", "cat-file", "-e", f"{base}^{{commit}}"],
+                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+              ).returncode != 0:
+                  fail_closed("Pull-request base commit is unavailable in the checkout; contributor check stopped.")
+          else:
+              result = subprocess.run(
+                  ["git", "merge-base", "origin/main", "HEAD"],
+                  capture_output=True, text=True, check=False,
+              )
+              if result.returncode != 0 or not result.stdout.strip():
+                  fail_closed("Could not determine the contributor comparison base.")
+              base = result.stdout.strip()
 
-            if echo "$email" | grep -qP '\+.*@users\.noreply\.github\.com'; then
-              continue  # GitHub id+login noreply emails auto-resolve
-            fi
+          log = subprocess.run(
+              ["git", "log", f"{base}..HEAD", "--no-merges", "--format=%H%x09%ae"],
+              capture_output=True, text=True, check=False,
+          )
+          if log.returncode != 0:
+              fail_closed("Could not inspect the commit range for contributor attribution.")
 
-            if [ -f "contributors/emails/${email}" ]; then
-              continue  # mapped via the contributors directory
-            fi
+          by_email = defaultdict(list)
+          for line in log.stdout.splitlines():
+              if not line:
+                  continue
+              parts = line.split("\t", 1)
+              if len(parts) != 2:
+                  fail_closed("A commit attribution record could not be parsed.")
+              commit_sha, email = parts
+              if not re.fullmatch(r"[0-9a-fA-F]{40}", commit_sha):
+                  fail_closed("A commit identifier in the attribution range is invalid.")
+              by_email[email].append(commit_sha.lower())
 
-            if ! grep -qF "\"${email}\"" scripts/releases/authors_legacy.py 2>/dev/null; then
-              AUTHOR=$(git log --author="$email" --format='%an' -1)
-              MISSING="${MISSING}\n  ${email} (${AUTHOR})"
-            fi
-          done <<< "$NEW_EMAILS"
+          if not by_email:
+              print("No new commits to check.")
+              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+                  output.write("review_status=[]\n")
+              Path("review-status.json").write_text("[]", encoding="utf-8")
+              sys.exit(0)
 
-          if [ -n "$MISSING" ]; then
-            echo ""
-            echo "⚠️  New contributor email(s) without a mapping:"
-            echo -e "$MISSING"
-            echo ""
-            echo "Add a mapping file (do NOT edit AUTHOR_MAP in scripts/releases/authors_legacy.py):"
-            echo "  python3 scripts/audit_pr_attribution.py --fix   # auto-resolve + create files"
-            echo "or manually:"
-            echo -e "$MISSING" | while read -r line; do
-              email=$(echo "$line" | sed 's/^ *//' | cut -d' ' -f1)
-              [ -z "$email" ] && continue
-              echo "    python3 scripts/add_contributor.py ${email} <github-username>"
-            done
-            echo ""
-            echo "To find the GitHub username for an email:"
-            echo "  gh api 'search/users?q=EMAIL+in:email' --jq '.items[0].login'"
+          legacy_file = root / "scripts" / "releases" / "authors_legacy.py"
+          try:
+              legacy_text = legacy_file.read_text(encoding="utf-8-sig", errors="replace")
+          except OSError:
+              legacy_text = ""
 
-            # Emit review_status for unmapped emails
-            DETAIL=$(echo -e "$MISSING" | sed '/^$/d; s/^  //')
-            HOW_TO_FIX=$'Run from the PR branch:\n```\npython3 scripts/audit_pr_attribution.py --fix\ngit add contributors && git commit -m "chore: map contributor emails" && git push\n```\nOr map one email manually (do NOT edit AUTHOR_MAP in scripts/releases/authors_legacy.py):\n```\npython3 scripts/add_contributor.py <email> <github-username>\n```\nTo find the GitHub username for an email:\n```\ngh api \'search/users?q=EMAIL+in:email\' --jq \'.items[0].login\'\n```\n'
-            REVIEW_STATUS=$(jq -nc \
-              --arg detail "$DETAIL" \
-              --arg how_to_fix "$HOW_TO_FIX" \
-              '[{"source":"contributor attribution","results":[{"kind":"action_required","title":"Unmapped contributor email(s)","summary":"New contributor email(s) are not in AUTHOR_MAP.","detail":$detail,"how_to_fix":$how_to_fix}]}]')
-            echo "review_status=$REVIEW_STATUS" >> "$GITHUB_OUTPUT"
-            echo "review_status=$REVIEW_STATUS" > review-status.json
+          skip_tokens = (
+              "teknium", "noreply@github.com", "dependabot",
+              "github-actions", "anthropic.com", "cursor.com",
+          )
+          id_noreply = re.compile(r"^\d+\+.+@users\.noreply\.github\.com$", re.IGNORECASE)
+          unresolved = []
+          mapped_count = 0
+          pr_author_verified_count = 0
 
-            exit 1
-          else
-            echo "✅ All contributor emails are mapped."
-            echo "review_status=[]" >> "$GITHUB_OUTPUT"
-            echo "review_status=[]" > review-status.json
-          fi
+          def mapped(email):
+              lowered = email.lower()
+              if any(token in lowered for token in skip_tokens):
+                  return True
+              if id_noreply.fullmatch(email):
+                  return True
+              # Treat email as a filename only when it cannot escape emails/.
+              if email and Path(email).name == email and "/" not in email and "\\" not in email:
+                  if (root / "contributors" / "emails" / email).is_file():
+                      return True
+              return f'"{email}"' in legacy_text
+
+          def github_commit_author_id(commit_sha):
+              if not token or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
+                  raise RuntimeError("GitHub API verification is not configured.")
+              url = f"https://api.github.com/repos/{repository}/commits/{commit_sha}"
+              request = urllib.request.Request(
+                  url,
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {token}",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "User-Agent": "contributor-attribution-gate",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=20) as response:
+                      payload = json.loads(response.read().decode("utf-8"))
+              except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError):
+                  raise RuntimeError("GitHub could not verify a commit author identity.")
+              author = payload.get("author")
+              author_id = author.get("id") if isinstance(author, dict) else None
+              if not isinstance(author_id, int):
+                  raise RuntimeError("GitHub did not associate a commit with a verified account.")
+              return author_id
+
+          for email, commit_shas in by_email.items():
+              if mapped(email):
+                  mapped_count += 1
+                  continue
+
+              # Narrow privacy-preserving exception: an unmapped author identity
+              # passes only when GitHub resolves EVERY commit in this email group
+              # to the authenticated PR author's numeric account ID. All other
+              # contributors remain subject to the existing mapping policy.
+              if event_name == "pull_request" and pr_author_id_raw.isdigit():
+                  try:
+                      author_ids = [github_commit_author_id(sha) for sha in commit_shas]
+                  except RuntimeError:
+                      unresolved.extend(commit_shas)
+                      continue
+                  if all(str(author_id) == pr_author_id_raw for author_id in author_ids):
+                      pr_author_verified_count += 1
+                      continue
+
+              unresolved.extend(commit_shas)
+
+          print(
+              f"Checked {sum(map(len, by_email.values()))} commit(s): "
+              f"{mapped_count} mapped/skipped identity group(s), "
+              f"{pr_author_verified_count} GitHub-verified PR-author group(s), "
+              f"{len(unresolved)} unresolved commit(s)."
+          )
+
+          review_status = []
+          if unresolved:
+              unique_unresolved = sorted(set(unresolved))
+              detail = (
+                  f"{len(unique_unresolved)} commit(s) contain author identities that "
+                  "are neither mapped nor verified as the pull-request author. "
+                  "Commit IDs: " + ", ".join(sha[:12] for sha in unique_unresolved) +
+                  ". Author email values are intentionally suppressed."
+              )
+              how_to_fix = (
+                  "For commits authored by the pull-request owner, use the account's "
+                  "GitHub ID+login noreply address. For other contributors, provide a "
+                  "reviewed repository mapping through the established maintainer process. "
+                  "This check intentionally does not print commit-author email addresses."
+              )
+              review_status = [{
+                  "source": "contributor attribution",
+                  "results": [{
+                      "kind": "action_required",
+                      "title": "Unmapped contributor identity",
+                      "summary": "One or more commit author identities require attribution review.",
+                      "detail": detail,
+                      "how_to_fix": how_to_fix,
+                  }],
+              }]
+              print("::error::Unresolved contributor identity; email values suppressed.")
+              result = json.dumps(review_status, separators=(",", ":"))
+              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+                  output.write(f"review_status={result}\n")
+              Path("review-status.json").write_text(result, encoding="utf-8")
+              sys.exit(1)
+
+          print("All contributor identities are mapped or verified against the pull-request author.")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write("review_status=[]\n")
+          Path("review-status.json").write_text("[]", encoding="utf-8")
+          PY
 
       - name: Upload review status artifact
         if: always() && steps.check-emails.outcome != 'skipped'
