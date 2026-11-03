@@ -7,9 +7,9 @@ helpers against the runner's genuine Git-for-Windows install plus a real
 broken-trampoline stand-in (a .bat that reproduces the launcher's
 "BUG (fork bomb)" guard output and refuses to run).
 
-windows-latest ships full Git for Windows at ``C:\\Program Files\\Git`` with
-the real ``mingw64\\libexec\\git-core\\git.exe`` — exactly the layout the
-locator targets — so the swap path is exercised end to end.
+Standard Windows runners may expose Git from Program Files or from the
+PM-managed PortableGit installation on PATH. The locator must resolve the real
+architecture-specific ``libexec\\git-core\\git.exe`` in either layout.
 """
 
 from __future__ import annotations
@@ -58,8 +58,8 @@ class TestGitTrampolineLive:
         from hermes_cli import update_cmd
 
         real = update_cmd._locate_real_git()
-        # windows-latest ships Git for Windows under Program Files with the
-        # canonical git-core layout the locator searches first.
+        # Accept the runner's standard Git install or the PM-managed toolchain
+        # root discovered relative to the PATH shim.
         assert real is not None, "expected git-core git.exe on windows-latest"
         assert real.exists()
         assert real.name == "git.exe"
@@ -69,6 +69,23 @@ class TestGitTrampolineLive:
         )
         assert probe.returncode == 0
         assert "git version" in probe.stdout.lower()
+
+    def test_locate_real_git_finds_pm_toolchain_git_core(self, tmp_path, monkeypatch):
+        from hermes_cli import update_cmd_git
+
+        install_root = tmp_path / "git-2.53.0+3-win32-x64"
+        shim = install_root / "cmd" / "git.exe"
+        real = install_root / "mingw64" / "libexec" / "git-core" / "git.exe"
+        real.parent.mkdir(parents=True)
+        real.write_bytes(b"pinned test binary")
+        monkeypatch.setattr(update_cmd_git.shutil, "which", lambda _name: str(shim))
+        monkeypatch.setattr(
+            update_cmd_git,
+            "_probe_fork_bomb",
+            lambda command: False if Path(command[0]) == real else None,
+        )
+
+        assert update_cmd_git._locate_real_git() == real
 
     def test_ensure_non_trampoline_git_swaps_live(self, tmp_path, capsys):
         from hermes_cli import update_cmd
