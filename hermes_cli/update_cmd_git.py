@@ -610,6 +610,20 @@ def _portable_git_candidates() -> list:
     candidates = []
     with suppress(Exception):
         candidates += [root / "git" / "mingw64" / "libexec" / "git-core" / "git.exe" for root in (get_default_hermes_root(), Path(get_hermes_home()))]
+    # CI and local development can use PM-managed PortableGit from PATH instead
+    # of a per-user Hermes root. PM exposes the shim under <tool-root>/cmd;
+    # the real executable lives beside it under the architecture-specific
+    # libexec/git-core directory.
+    with suppress(Exception):
+        path_git = shutil.which("git")
+        if path_git:
+            command_dir = Path(path_git).parent
+            if command_dir.name.lower() in {"cmd", "bin"}:
+                install_root = command_dir.parent
+                candidates += [
+                    install_root / arch / "libexec" / "git-core" / "git.exe"
+                    for arch in ("clangarm64", "mingw64", "mingw32")
+                ]
     return candidates
 
 
