@@ -787,9 +787,14 @@ class TestImageApiSurface:
     def test_catalog_models_are_offered_only_by_openrouter(self):
         from plugins.image_gen.openrouter import _IMAGE_API_MODELS, _build_providers
 
+        # This is the curated offline catalog contract, not a snapshot of the
+        # live /images/models endpoint. Live catalog discovery and merging are
+        # covered separately above; upstream additions/removals must not make
+        # this ownership test nondeterministic.
         by_name = {p.name: p for p in _build_providers()}
-        openrouter_ids = {m["id"] for m in by_name["openrouter"].list_models()}
-        nous_ids = {m["id"] for m in by_name["nous"].list_models()}
+        with patch(_RUNTIME, side_effect=RuntimeError("no live credentials")):
+            openrouter_ids = {m["id"] for m in by_name["openrouter"].list_models()}
+            nous_ids = {m["id"] for m in by_name["nous"].list_models()}
         assert set(_IMAGE_API_MODELS) <= openrouter_ids
         assert not (set(_IMAGE_API_MODELS) & nous_ids)
 
