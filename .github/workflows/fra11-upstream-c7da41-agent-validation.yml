@@ -8,7 +8,9 @@ on:
     paths:
       - .github/workflows/fra11-upstream-c7da41-agent-validation.yml
       - agent/auxiliary_client.py
+      - agent/auxiliary_rate_limits.py
       - tests/agent/test_auxiliary_client.py
+      - tests/agent/test_auxiliary_client_openrouter.py
   workflow_dispatch:
 
 permissions:
@@ -63,7 +65,7 @@ jobs:
           while IFS= read -r changed_file; do
             [ -z "$changed_file" ] && continue
             case "$changed_file" in
-              agent/auxiliary_client.py|tests/agent/test_auxiliary_client.py|              .github/workflows/fra11-upstream-c7da41-agent-validation.yml|              .github/workflows/contributor-check.yml|              .github/workflows/ci.yaml|.github/workflows/lint.yml|              .github/workflows/tests.yml|.github/workflows/tests-os.yml|              .github/workflows/nix.yml|.github/workflows/docker.yml|              .github/workflows/history-check.yml|.github/workflows/prompt-surface-diff.yml|              .github/workflows/infographic-check.yml|.github/workflows/profile-artifact-check.yml|              .github/workflows/icons-freshness-check.yml|.github/workflows/case-collision-check.yml|              .github/workflows/blob-size-check.yml|.github/workflows/lazy-deps-guard.yml|              .github/workflows/supply-chain-audit.yml|.github/workflows/ci-review-comment.yml) ;;
+              agent/auxiliary_client.py|agent/auxiliary_rate_limits.py|tests/agent/test_auxiliary_client.py|tests/agent/test_auxiliary_client_openrouter.py|              .github/workflows/fra11-upstream-c7da41-agent-validation.yml|              .github/workflows/contributor-check.yml|              .github/workflows/ci.yaml|.github/workflows/lint.yml|              .github/workflows/tests.yml|.github/workflows/tests-os.yml|              .github/workflows/nix.yml|.github/workflows/docker.yml|              .github/workflows/history-check.yml|.github/workflows/prompt-surface-diff.yml|              .github/workflows/infographic-check.yml|.github/workflows/profile-artifact-check.yml|              .github/workflows/icons-freshness-check.yml|.github/workflows/case-collision-check.yml|              .github/workflows/blob-size-check.yml|.github/workflows/lazy-deps-guard.yml|              .github/workflows/supply-chain-audit.yml|.github/workflows/ci-review-comment.yml) ;;
               *) echo "UNEXPECTED_CANDIDATE_FILE_SCOPE: $changed_file"; exit 1 ;;
             esac
           done <<< "$changed_files"
