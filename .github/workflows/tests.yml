@@ -138,8 +138,8 @@ jobs:
         uses: ./.github/actions/check-clean-worktree
 
   e2e:
-    # The core suites spawn real serve / gateway / tui_gateway / MCP / SQLite
-    # writer processes per test; a 4-vCPU runner serialises them into timeouts.
+    # Release/manual-dispatch integration lane. Retain the high-core hosted
+    # runner requirement; this is intentionally not part of PR free-runner CI.
     if: inputs.e2e
     runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 30
@@ -262,6 +262,8 @@ jobs:
         uses: ./.github/actions/check-clean-worktree
 
   e2e-upgrade-plan:
+    # Release/manual-dispatch integration lane. Keep its existing runner
+    # separate from ordinary pull-request validation.
     # One e2e-upgrade shard per suite directory: the files directly under
     # tests/e2e/core/upgrade ("core") plus every subdirectory that holds
     # test_*.py (pm, git, handoff, network, hosts, ...). A new suite

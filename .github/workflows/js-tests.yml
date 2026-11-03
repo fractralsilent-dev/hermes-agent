@@ -12,17 +12,13 @@ on:
 jobs:
   check:
     name: JS & TS checks
-    # One 32-core job replaces a 14-leg matrix. The matrix spread about 612s
-    # of check payload over 4-core runners. It paid about 371s of repeated
-    # setup to do it: 14 checkouts, 14 node installs, 14 node_modules
-    # restores.
-    #
-    # One larger runner installs one time. vitest, tsc and eslint each size
-    # their own worker pool from the core count.
-    runs-on: blacksmith-32vcpu-ubuntu-2404
-    timeout-minutes: 30
+    # A standard 4-vCPU public runner keeps this lane free. The workspace
+    # check dispatcher caps concurrent checks at the host's available
+    # parallelism, so worker pools scale down without dropping any checks.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
-      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a  # v1
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           ref: ${{ inputs.commit }}
       - name: Set up the locked JS build toolchain
@@ -39,7 +35,7 @@ jobs:
       - name: Install zsh and a virtual display for Electron
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get install -y zsh xvfb \
+          sudo apt-get install -y zsh xvfb libx11-dev libxi-dev \
             libgtk-3-0 libnotify4 libnss3 libxss1 libxtst6 \
             xdg-utils libatspi2.0-0 libdrm2 libgbm1 libasound2t64
 

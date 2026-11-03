@@ -33,6 +33,7 @@ on:
         default: ''
   pull_request:
     paths:
+      - '.github/workflows/pm-bundle.yml'
       - 'pm/**'
       - '!pm/**/*.md'
       - 'scripts/bundles/**'
@@ -77,11 +78,11 @@ jobs:
           - label: darwin-x64
             runner: macos-15-intel
           - label: win32-x64
-            runner: blacksmith-32vcpu-windows-2025
+            runner: windows-2025
           - label: win32-arm64
-            runner: windows-latest-32-arm-core
+            runner: windows-11-arm
     steps:
-      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a  # v1
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2  # v1
         with:
           # Default to the exact candidate commit (github.sha); inputs.ref
           # remains an escape hatch for a focused manual reproduction.

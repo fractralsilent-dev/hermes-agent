@@ -649,6 +649,12 @@
     "kind": "bare_which"
   },
   {
+    "path": "hermes_cli/update_cmd_git.py",
+    "symbol": "_portable_git_candidates",
+    "kind": "bare_which",
+    "reason": "Windows Git-for-Windows recovery resolves the PM-managed git shim on PATH to derive its sibling architecture-specific git-core executable. The candidate remains gated by _probe_fork_bomb; this path lookup is covered by test_locate_real_git_finds_pm_toolchain_git_core."
+  },
+  {
     "path": "hermes_cli/update_pause_record.py",
     "symbol": "_git_executable",
     "kind": "bare_which",
