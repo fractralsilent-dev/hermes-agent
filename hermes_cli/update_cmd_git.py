@@ -8,6 +8,7 @@ test patches on ``update_cmd`` stay effective).
 import logging
 import os
 import shlex
+import shutil
 from contextlib import nullcontext, suppress
 import subprocess
 import sys
