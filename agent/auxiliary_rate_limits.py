@@ -21,12 +21,37 @@ _RATE_LIMIT_BILLING_KEYWORDS = (
 )
 
 
+def _openrouter_error_payload(body: dict) -> dict | None:
+    """Return one structured error object from supported Chat Completions shapes.
+
+    OpenRouter errors may be top-level, flat SDK-compatible bodies, or attached
+    to an individual choice when non-streaming generation returns partial
+    content. Ignore malformed choices and never infer an error from message text.
+    """
+    nested = body.get("error")
+    if isinstance(nested, dict):
+        return nested
+
+    if "error" not in body and ("metadata" in body or "code" in body):
+        return body
+
+    choices = body.get("choices")
+    if isinstance(choices, list):
+        for choice in choices:
+            if not isinstance(choice, dict):
+                continue
+            choice_error = choice.get("error")
+            if isinstance(choice_error, dict):
+                return choice_error
+    return None
+
+
 def _openrouter_error_type(exc: Exception) -> str | None:
     """Read Chat Completions' typed OpenRouter error discriminator, when present.
 
-    The OpenAI SDK normally exposes the response as body["error"]; a flat
-    {message, code, metadata} body is also accepted for SDK compatibility.
-    Metadata presence alone is deliberately insufficient.
+    Supports top-level errors, flat SDK-compatible bodies, and per-choice
+    errors in non-streaming partial-content responses. Metadata presence alone
+    is deliberately insufficient.
     """
     body = getattr(exc, "body", None)
     if not isinstance(body, dict):
@@ -43,14 +68,8 @@ def _openrouter_error_type(exc: Exception) -> str | None:
     if not isinstance(body, dict):
         return None
 
-    nested = body.get("error")
-    if isinstance(nested, dict):
-        metadata = nested.get("metadata")
-    elif "error" not in body:
-        metadata = body.get("metadata")
-    else:
-        return None
-
+    error = _openrouter_error_payload(body)
+    metadata = error.get("metadata") if error is not None else None
     if not isinstance(metadata, dict):
         return None
     error_type = metadata.get("error_type")
@@ -99,8 +118,8 @@ def _openrouter_error_code(exc: Exception) -> int | None:
                     body = None
     if not isinstance(body, dict):
         return None
-    nested = body.get("error")
-    code = nested.get("code") if isinstance(nested, dict) else body.get("code")
+    error = _openrouter_error_payload(body)
+    code = error.get("code") if error is not None else None
     return code if isinstance(code, int) and not isinstance(code, bool) else None
 
 
