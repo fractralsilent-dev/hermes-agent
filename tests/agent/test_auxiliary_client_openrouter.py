@@ -319,3 +319,22 @@ def test_other_provider_does_not_use_openrouter_short_circuit(monkeypatch):
     assert _recover_provider_pool("other-provider", OtherProvider429(), failed_api_key="sk-failed") is True
     assert len(pool.rotate_calls) == 1
     assert pool.rotate_calls[0]["status_code"] == 429
+
+
+@pytest.mark.parametrize("embedded_code", [400, 401, 402, 403, 502, 503, None])
+def test_rate_limit_error_type_without_embedded_429_is_not_upstream_rate_limit(embedded_code):
+    class MisTypedError(Exception):
+        # Outer status can disagree with the embedded error, especially for streams.
+        status_code = 429
+
+        def __init__(self):
+            super().__init__("typed error with a non-429 or absent embedded code")
+            error = {
+                "message": "Rate limit exceeded",
+                "metadata": {"error_type": "rate_limit_exceeded"},
+            }
+            if embedded_code is not None:
+                error["code"] = embedded_code
+            self.body = {"error": error}
+
+    assert _is_openrouter_upstream_rate_limit(MisTypedError()) is False
