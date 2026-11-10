@@ -103,7 +103,22 @@ def test_account_level_openrouter_429_without_provider_error_type_still_rotates(
     assert pool.rotate_calls[0]["api_key_hint"] == "sk-failed"
 
 
-def test_typed_non_rate_limit_provider_error_overrides_429_message_and_sdk_class(monkeypatch):
+@pytest.mark.parametrize(
+    "error_type",
+    [
+        "provider_unavailable",
+        "permission_denied",
+        "invalid_request",
+        "token_limit_exceeded",
+        "content_policy_violation",
+        "refusal",
+        "server",
+        "timeout",
+        "unmapped",
+        "future_typed_error",
+    ],
+)
+def test_typed_non_rate_limit_openrouter_error_never_rotates_credential(monkeypatch, error_type):
     class RateLimitError(Exception):
         status_code = 429
 
@@ -114,21 +129,63 @@ def test_typed_non_rate_limit_provider_error_overrides_429_message_and_sdk_class
                     "code": 429,
                     "message": "Rate limit exceeded",
                     "metadata": {
-                        "error_type": "provider_unavailable",
+                        "error_type": error_type,
                         "provider_name": "mock-upstream",
                     },
                 },
             }
 
     exc = RateLimitError()
-    # The generic classifier remains provider-agnostic; the typed override is
-    # applied only by OpenRouter's recovery branch.
+    # Generic classification remains provider-agnostic; typed handling is
+    # scoped to OpenRouter's recovery branch.
     assert _is_rate_limit_error(exc) is True
     assert _is_openrouter_upstream_rate_limit(exc) is False
 
     pool = _install_pool(monkeypatch)
     assert _recover_provider_pool("openrouter", exc, failed_api_key="sk-failed") is False
-    assert pool.rotate_calls == [], "a typed non-rate-limit provider error must not bench the API key"
+    assert pool.rotate_calls == [], "a typed non-auth/payment error must not bench the API key"
+
+
+def test_typed_openrouter_authentication_error_keeps_existing_key_recovery(monkeypatch):
+    class AuthenticationError(Exception):
+        status_code = 401
+        body = {
+            "error": {
+                "code": 401,
+                "message": "Invalid credentials",
+                "metadata": {"error_type": "authentication"},
+            },
+        }
+
+    pool = _install_pool(monkeypatch)
+    assert _recover_provider_pool(
+        "openrouter", AuthenticationError("Error code: 401 - Invalid credentials"),
+        failed_api_key="sk-failed",
+    ) is True
+    assert len(pool.rotate_calls) == 1
+    assert pool.rotate_calls[0]["status_code"] == 401
+    assert pool.rotate_calls[0]["api_key_hint"] == "sk-failed"
+
+
+def test_typed_openrouter_payment_required_keeps_existing_credit_recovery(monkeypatch):
+    class PaymentRequired(Exception):
+        status_code = 402
+        body = {
+            "error": {
+                "code": 402,
+                "message": "Payment required",
+                "metadata": {"error_type": "payment_required"},
+            },
+        }
+
+    pool = _install_pool(monkeypatch)
+    assert _recover_provider_pool(
+        "openrouter", PaymentRequired("Error code: 402 - Payment required"),
+        failed_api_key="sk-failed",
+    ) is True
+    assert len(pool.rotate_calls) == 1
+    assert pool.rotate_calls[0]["status_code"] == 402
+    assert pool.rotate_calls[0]["api_key_hint"] == "sk-failed"
 
 
 def test_openrouter_metadata_without_typed_error_type_is_not_an_upstream_rate_limit():

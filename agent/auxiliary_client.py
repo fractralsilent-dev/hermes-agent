@@ -3602,14 +3602,9 @@ def _recover_provider_pool(provider: str, exc: Exception, *, failed_api_key: str
     # but this interpretation must not affect other auxiliary providers.
     if normalized == "openrouter":
         openrouter_error_type = _openrouter_error_type(exc)
-        if openrouter_error_type in {
-            "rate_limit_exceeded",
-            "provider_overloaded",
-            "provider_unavailable",
-            "server",
-            "timeout",
-            "unmapped",
-        }:
+        # Authentication and payment_required retain the established key/credit
+        # recovery paths; every other typed error is not evidence of a dead key.
+        if openrouter_error_type not in {None, "authentication", "payment_required"}:
             if (
                 openrouter_error_type == "rate_limit_exceeded"
                 and _is_openrouter_upstream_rate_limit(exc)
@@ -3619,7 +3614,7 @@ def _recover_provider_pool(provider: str, exc: Exception, *, failed_api_key: str
                 )
             else:
                 logger.debug(
-                    "Auxiliary client: OpenRouter typed provider error %s — preserving credential health",
+                    "Auxiliary client: OpenRouter typed error %s — preserving credential health",
                     openrouter_error_type,
                 )
             return False
