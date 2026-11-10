@@ -103,6 +103,73 @@ def test_midstream_openrouter_rate_limit_with_http_200_preserves_credential_pool
     assert pool_requests == [], "typed mid-stream 429 must preserve the OpenRouter credential"
 
 
+def test_nonstreaming_partial_content_choice_error_preserves_credential_pool(monkeypatch):
+    class PartialContentRateLimit(Exception):
+        status_code = 200
+        body = {
+            "choices": [
+                {"message": {"content": "partial generated content"}},
+                {
+                    "error": {
+                        "code": 429,
+                        "message": "Upstream rate limit exceeded",
+                        "metadata": {"error_type": "rate_limit_exceeded"},
+                    },
+                },
+            ],
+        }
+
+    exc = PartialContentRateLimit("OpenRouter returned partial content with a choice error")
+    assert _is_openrouter_upstream_rate_limit(exc) is True
+    pool_requests = []
+    monkeypatch.setattr(
+        "agent.auxiliary_client.pool_for_aux_provider",
+        lambda *args, **kwargs: pool_requests.append((args, kwargs)),
+    )
+    assert _recover_provider_pool("openrouter", exc, failed_api_key="sk-failed") is False
+    assert pool_requests == [], "per-choice upstream 429 must preserve the OpenRouter credential"
+
+
+@pytest.mark.parametrize(
+    "choices",
+    [
+        "not-a-list",
+        [None, {"error": "not-an-object"}],
+        [{"message": {"content": "partial content"}}],
+        [{"error": {"code": 429, "message": "rate limit"}}],
+    ],
+    ids=["non-list", "malformed-choice", "missing-error", "untyped-choice-error"],
+)
+def test_malformed_or_untyped_choice_error_is_not_treated_as_upstream_rate_limit(choices):
+    class MalformedChoiceError(Exception):
+        status_code = 429
+        body = {"choices": choices}
+
+    assert _is_openrouter_upstream_rate_limit(MalformedChoiceError()) is False
+
+
+def test_typed_non_rate_limit_choice_error_does_not_rotate_credentials(monkeypatch):
+    class ChoiceProviderUnavailable(Exception):
+        status_code = 503
+        body = {
+            "choices": [
+                {
+                    "error": {
+                        "code": 503,
+                        "message": "Provider unavailable",
+                        "metadata": {"error_type": "provider_unavailable"},
+                    },
+                },
+            ],
+        }
+
+    exc = ChoiceProviderUnavailable("OpenRouter choice-level provider error")
+    assert _is_openrouter_upstream_rate_limit(exc) is False
+    pool = _install_pool(monkeypatch)
+    assert _recover_provider_pool("openrouter", exc, failed_api_key="sk-failed") is False
+    assert pool.rotate_calls == []
+
+
 def test_account_level_openrouter_429_without_provider_error_type_still_rotates(monkeypatch):
     class Account429(Exception):
         status_code = 429
