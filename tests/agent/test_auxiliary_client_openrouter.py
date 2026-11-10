@@ -121,7 +121,9 @@ def test_typed_non_rate_limit_provider_error_overrides_429_message_and_sdk_class
             }
 
     exc = RateLimitError()
-    assert _is_rate_limit_error(exc) is False
+    # The generic classifier remains provider-agnostic; the typed override is
+    # applied only by OpenRouter's recovery branch.
+    assert _is_rate_limit_error(exc) is True
     assert _is_openrouter_upstream_rate_limit(exc) is False
 
     pool = _install_pool(monkeypatch)
@@ -159,9 +161,9 @@ def test_openrouter_provider_overload_does_not_rotate_credentials(monkeypatch):
             },
         }
 
-    exc = ProviderOverloaded("Error code: 503 - Provider is temporarily overloaded")
+    exc = ProviderOverloaded("Error code: 503 - Provider returned error")
     assert _is_rate_limit_error(exc) is False
-    assert _is_overloaded_error(exc) is True
+    assert _is_overloaded_error(exc) is False
     assert _is_openrouter_upstream_rate_limit(exc) is False
 
     pool = _install_pool(monkeypatch)
@@ -193,6 +195,27 @@ def test_typed_openrouter_rate_limit_can_be_read_from_response_json(body_state):
                 self.body = "not-a-dict"
 
     assert _is_openrouter_upstream_rate_limit(ResponseWrapped429()) is True
+
+
+
+
+def test_other_provider_typed_non_rate_error_keeps_legacy_429_pool_recovery(monkeypatch):
+    class RateLimitError(Exception):
+        status_code = 429
+        body = {
+            "error": {
+                "code": 429,
+                "message": "Rate limit exceeded",
+                "metadata": {"error_type": "provider_unavailable"},
+            },
+        }
+
+    exc = RateLimitError("Error code: 429 - Rate limit exceeded")
+    assert _is_rate_limit_error(exc) is True
+    pool = _install_pool(monkeypatch)
+    assert _recover_provider_pool("other-provider", exc, failed_api_key="sk-failed") is True
+    assert len(pool.rotate_calls) == 1
+    assert pool.rotate_calls[0]["status_code"] == 429
 
 
 def test_other_provider_does_not_use_openrouter_short_circuit(monkeypatch):

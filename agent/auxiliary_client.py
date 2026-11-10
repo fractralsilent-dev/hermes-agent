@@ -41,6 +41,7 @@ from agent.auxiliary_rate_limits import (
     _is_openrouter_upstream_rate_limit,
     _is_overloaded_error,
     _is_rate_limit_error,
+    _openrouter_error_type,
 )
 from agent.auxiliary_reasoning_floor import remember_reasoning_floor, with_reasoning_floor
 from agent.auxiliary_structured_output import _route_key, _without_structured_output_format, remember_structured_output_rejection
@@ -3597,18 +3598,31 @@ def _recover_provider_pool(provider: str, exc: Exception, *, failed_api_key: str
     another process already rotated (current() would be None).
     """
     normalized = _normalize_aux_provider(provider)
-    # An OpenRouter-wrapped upstream 429 is a provider/model capacity signal,
-    # not proof that the user's OpenRouter API credential is unhealthy.
-    if (
-        normalized == "openrouter"
-        and _is_rate_limit_error(exc)
-        and not _is_overloaded_error(exc)
-        and _is_openrouter_upstream_rate_limit(exc)
-    ):
-        logger.debug(
-            "Auxiliary client: OpenRouter upstream 429 — preserving credential health"
-        )
-        return False
+    # OpenRouter's typed provider errors override the generic 429 heuristic,
+    # but this interpretation must not affect other auxiliary providers.
+    if normalized == "openrouter":
+        openrouter_error_type = _openrouter_error_type(exc)
+        if openrouter_error_type in {
+            "rate_limit_exceeded",
+            "provider_overloaded",
+            "provider_unavailable",
+            "server",
+            "timeout",
+            "unmapped",
+        }:
+            if (
+                openrouter_error_type == "rate_limit_exceeded"
+                and _is_openrouter_upstream_rate_limit(exc)
+            ):
+                logger.debug(
+                    "Auxiliary client: OpenRouter upstream 429 — preserving credential health"
+                )
+            else:
+                logger.debug(
+                    "Auxiliary client: OpenRouter typed provider error %s — preserving credential health",
+                    openrouter_error_type,
+                )
+            return False
     try:
         pool = pool_for_aux_provider(provider, normalized, load_pool)
     except Exception as load_exc:

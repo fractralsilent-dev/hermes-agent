@@ -62,18 +62,12 @@ def _is_overloaded_error(exc: Exception) -> bool:
 
 
 def _is_rate_limit_error(exc: Exception) -> bool:
-    """Classify HTTP 429 errors without overriding a typed OpenRouter error.
+    """Generic HTTP 429 classifier shared by all auxiliary providers.
 
-    OpenRouter's Chat Completions metadata.error_type is authoritative when
-    supplied: only rate_limit_exceeded with HTTP 429 is a recoverable 429.
-    Other typed errors must not become rate limits merely because their HTTP
-    status or message looks like 429. Untyped account-level 429s retain the
-    existing fallback behavior.
+    OpenRouter's typed provider discriminator is intentionally applied only
+    inside the OpenRouter-specific recovery branch. Other providers retain this
+    established class/status/message fallback behavior.
     """
-    error_type = _openrouter_error_type(exc)
-    if error_type is not None:
-        return error_type == "rate_limit_exceeded" and _exc_http_status(exc) == 429
-
     # OpenAI's RateLimitError may omit .status_code; botocore exposes throttling
     # through its structured response instead of an HTTP status attribute.
     if type(exc).__name__ == "RateLimitError" or _botocore_error(exc)[1] == "ThrottlingException":
