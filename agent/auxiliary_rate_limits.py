@@ -84,8 +84,10 @@ def _is_rate_limit_error(exc: Exception) -> bool:
 
 
 def _is_openrouter_upstream_rate_limit(exc: Exception) -> bool:
-    """Identify only a typed OpenRouter upstream 429, not an account-level 429."""
-    return (
-        _exc_http_status(exc) == 429
-        and _openrouter_error_type(exc) == "rate_limit_exceeded"
-    )
+    """Identify the canonical typed OpenRouter rate-limit error, including mid-stream SSE.
+
+    OpenRouter can emit a typed error after an HTTP 200 stream has been committed;
+    in that case the error object's code carries 429 and metadata.error_type remains
+    the stable discriminator. Account-level 429s without error_type do not match.
+    """
+    return _openrouter_error_type(exc) == "rate_limit_exceeded"

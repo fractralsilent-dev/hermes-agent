@@ -82,6 +82,27 @@ def test_typed_openrouter_upstream_rate_limit_preserves_credential_pool(monkeypa
     assert pool_requests == [], "typed upstream 429 must short-circuit before credential-pool lookup"
 
 
+def test_midstream_openrouter_rate_limit_with_http_200_preserves_credential_pool(monkeypatch):
+    class MidStreamRateLimit(Exception):
+        status_code = 200
+        # OpenAI-compatible SDKs may expose the inner SSE error object as body.
+        body = {
+            "code": 429,
+            "message": "Rate limit exceeded",
+            "metadata": {"error_type": "rate_limit_exceeded"},
+        }
+
+    exc = MidStreamRateLimit("OpenRouter mid-stream rate limit")
+    assert _is_openrouter_upstream_rate_limit(exc) is True
+    pool_requests = []
+    monkeypatch.setattr(
+        "agent.auxiliary_client.pool_for_aux_provider",
+        lambda *args, **kwargs: pool_requests.append((args, kwargs)),
+    )
+    assert _recover_provider_pool("openrouter", exc, failed_api_key="sk-failed") is False
+    assert pool_requests == [], "typed mid-stream 429 must preserve the OpenRouter credential"
+
+
 def test_account_level_openrouter_429_without_provider_error_type_still_rotates(monkeypatch):
     class Account429(Exception):
         status_code = 429
