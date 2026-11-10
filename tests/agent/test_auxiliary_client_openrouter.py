@@ -89,10 +89,6 @@ def test_account_level_openrouter_429_without_provider_error_type_still_rotates(
             "error": {
                 "code": 429,
                 "message": "Rate limit exceeded for this API key",
-                "metadata": {
-                    "limit_source": "openrouter_key_limit",
-                    "scope": "api_key",
-                },
             },
         }
 
@@ -119,7 +115,6 @@ def test_typed_non_rate_limit_provider_error_overrides_429_message_and_sdk_class
                     "message": "Rate limit exceeded",
                     "metadata": {
                         "error_type": "provider_unavailable",
-                        "provider_code": "upstream_unavailable",
                         "provider_name": "mock-upstream",
                     },
                 },
