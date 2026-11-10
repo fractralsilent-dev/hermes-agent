@@ -83,11 +83,34 @@ def _is_rate_limit_error(exc: Exception) -> bool:
     return _contains_any(err_lower, _RATE_LIMIT_KEYWORDS) or not _contains_any(err_lower, _RATE_LIMIT_BILLING_KEYWORDS)
 
 
-def _is_openrouter_upstream_rate_limit(exc: Exception) -> bool:
-    """Identify the canonical typed OpenRouter rate-limit error, including mid-stream SSE.
+def _openrouter_error_code(exc: Exception) -> int | None:
+    """Read the HTTP-like code from the typed OpenRouter error envelope."""
+    body = getattr(exc, "body", None)
+    if not isinstance(body, dict):
+        response = getattr(exc, "response", None)
+        if isinstance(response, dict):
+            body = response
+        else:
+            json_method = getattr(response, "json", None)
+            if callable(json_method):
+                try:
+                    body = json_method()
+                except Exception:
+                    body = None
+    if not isinstance(body, dict):
+        return None
+    nested = body.get("error")
+    code = nested.get("code") if isinstance(nested, dict) else body.get("code")
+    return code if isinstance(code, int) and not isinstance(code, bool) else None
 
-    OpenRouter can emit a typed error after an HTTP 200 stream has been committed;
-    in that case the error object's code carries 429 and metadata.error_type remains
-    the stable discriminator. Account-level 429s without error_type do not match.
+
+def _is_openrouter_upstream_rate_limit(exc: Exception) -> bool:
+    """Require both canonical type and code 429, including mid-stream SSE.
+
+    A mid-stream SSE error can have outer HTTP status 200, so inspect the
+    embedded error object's code rather than the exception status alone.
     """
-    return _openrouter_error_type(exc) == "rate_limit_exceeded"
+    return (
+        _openrouter_error_type(exc) == "rate_limit_exceeded"
+        and _openrouter_error_code(exc) == 429
+    )
