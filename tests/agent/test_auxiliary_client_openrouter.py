@@ -230,8 +230,12 @@ def test_openrouter_provider_overload_does_not_rotate_credentials(monkeypatch):
 
 @pytest.mark.parametrize(
     "body_state",
-    ["absent", "non-dict"],
-    ids=["response-json-fallback", "response-json-fallback-for-non-dict-body"],
+    ["absent", "non-dict", "response-dict"],
+    ids=[
+        "response-json-fallback",
+        "response-json-fallback-for-non-dict-body",
+        "response-already-decoded-dict",
+    ],
 )
 def test_typed_openrouter_rate_limit_can_be_read_from_response_json(body_state):
     response_body = {
@@ -247,7 +251,11 @@ def test_typed_openrouter_rate_limit_can_be_read_from_response_json(body_state):
 
         def __init__(self):
             super().__init__("Error code: 429 - Rate limit exceeded")
-            self.response = SimpleNamespace(json=lambda: response_body)
+            self.response = (
+                response_body
+                if body_state == "response-dict"
+                else SimpleNamespace(json=lambda: response_body)
+            )
             if body_state == "non-dict":
                 self.body = "not-a-dict"
 

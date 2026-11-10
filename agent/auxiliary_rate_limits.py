@@ -31,10 +31,15 @@ def _openrouter_error_type(exc: Exception) -> str | None:
     body = getattr(exc, "body", None)
     if not isinstance(body, dict):
         response = getattr(exc, "response", None)
-        try:
-            body = response.json() if response is not None else None
-        except (ValueError, TypeError):
-            body = None
+        if isinstance(response, dict):
+            body = response
+        else:
+            json_method = getattr(response, "json", None)
+            if callable(json_method):
+                try:
+                    body = json_method()
+                except Exception:
+                    body = None
     if not isinstance(body, dict):
         return None
 
