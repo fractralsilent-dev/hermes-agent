@@ -566,6 +566,50 @@ def test_openrouter_account_level_429_still_rotates_credential_pool():
     assert pool.entries()[0].last_status == 429
 
 
+def test_partial_choice_embedded_error_uses_the_provider_classifier():
+    from agent.auxiliary_client import _validate_llm_response
+    from agent.auxiliary_error_policy import classify_attempt
+
+    choice_error = {
+        "code": 429,
+        "message": "Upstream rate limit exceeded",
+        "metadata": {"error_type": "rate_limit_exceeded", "provider_name": "DeepSeek"},
+    }
+    response = SimpleNamespace(choices=[
+        SimpleNamespace(message=SimpleNamespace(content="partial text"), finish_reason="stop"),
+        SimpleNamespace(message=None, error=choice_error, finish_reason="error"),
+    ])
+    with patch("agent.aux_accounting.record_aux_usage"):
+        with pytest.raises(InvalidProviderResponseError) as caught:
+            _validate_llm_response(response, task="title_generation")
+    verdict = classify_attempt(caught.value, "openrouter")
+    assert verdict.reason is FailoverReason.upstream_rate_limit
+    assert verdict.should_rotate_credential is False
+    assert verdict.should_fallback is True
+
+
+def test_partial_choice_account_level_429_still_rotates_credential_pool():
+    from agent.auxiliary_client import _validate_llm_response
+    from agent.auxiliary_error_policy import classify_attempt
+
+    choice_error = {"code": 429, "message": "Rate limit exceeded for this API key"}
+    response = SimpleNamespace(choices=[
+        SimpleNamespace(message=SimpleNamespace(content="partial text"), finish_reason="stop"),
+        SimpleNamespace(message=None, error=choice_error, finish_reason="error"),
+    ])
+    with patch("agent.aux_accounting.record_aux_usage"):
+        with pytest.raises(InvalidProviderResponseError) as caught:
+            _validate_llm_response(response, task="title_generation")
+    verdict = classify_attempt(caught.value, "openrouter")
+    assert verdict.reason is FailoverReason.rate_limit
+    assert verdict.should_rotate_credential is True
+
+    pool = _openrouter_test_pool()
+    outcome = run_ladder(caught.value, provider="openrouter", pool=pool)
+    assert outcome.fell_back is True
+    assert pool.entries()[0].last_status == 429
+
+
 def test_invalid_answer_classifies_as_incomplete_response():
     from agent.error_classifier import classify_api_error
 
