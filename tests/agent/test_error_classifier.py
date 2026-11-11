@@ -1652,6 +1652,48 @@ class TestOpenRouterUpstreamRateLimit:
         assert result.should_rotate_credential is True
 
 
+class TestOpenRouterTypedStreamErrors:
+    """OpenRouter errors surfaced by status-200 SSE and partial choice responses."""
+
+    def test_flat_sdk_sse_error_body_preserves_healthy_openrouter_key(self):
+        body = {
+            "code": 429,
+            "message": "Upstream rate limit exceeded",
+            "metadata": {"error_type": "rate_limit_exceeded", "provider_name": "DeepSeek"},
+        }
+        result = classify_api_error(
+            MockAPIError("Upstream rate limit exceeded", body=body),
+            provider="openrouter", model="deepseek/deepseek-v4-flash",
+        )
+        assert result.reason is FailoverReason.upstream_rate_limit
+        assert result.status_code == 429
+        assert result.should_rotate_credential is False
+        assert result.should_fallback is True
+        assert result.error_context.get("upstream_provider") == "DeepSeek"
+
+    @pytest.mark.parametrize(
+        "provider,body,status,expected",
+        [
+            ("openrouter", {"code": 429, "message": "Rate limit exceeded",
+                            "metadata": {"error_type": "account_rate_limit"}}, 429, FailoverReason.rate_limit),
+            ("openrouter", {"code": 429, "message": "Rate limit exceeded"}, 429, FailoverReason.rate_limit),
+            ("other-provider", {"code": 429, "message": "Rate limit exceeded",
+                                "metadata": {"error_type": "rate_limit_exceeded"}}, 429, FailoverReason.rate_limit),
+            ("openrouter", {"code": 503, "message": "Upstream rate limit exceeded",
+                            "metadata": {"error_type": "rate_limit_exceeded"}}, 503, FailoverReason.server_error),
+        ],
+    )
+    def test_typed_guard_requires_provider_metadata_and_embedded_429(self, provider, body, status, expected):
+        result = classify_api_error(
+            MockAPIError(str(body.get("message") or "Rate limit exceeded"), status_code=status, body=body),
+            provider=provider,
+        )
+        assert result.reason is expected
+        assert result.reason is not FailoverReason.upstream_rate_limit
+        if status == 429:
+            assert result.should_rotate_credential is True
+
+
 class TestCommandCodeUpstreamUnavailable:
     """An explicit upstream outage is not a credential rate limit."""
 
