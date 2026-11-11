@@ -90,7 +90,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ruff check agent/error_classifier.py agent/auxiliary_call_outcome.py agent/auxiliary_client.py tests/agent/test_error_classifier.py tests/agent/test_auxiliary_error_policy.py
+          ruff check agent/error_classifier.py agent/auxiliary_call_outcome.py agent/auxiliary_error_policy.py agent/auxiliary_client.py tests/agent/test_error_classifier.py tests/agent/test_auxiliary_error_policy.py
 
       - name: Canonical focused regression tests
         env:
