@@ -512,6 +512,60 @@ def test_refreshed_nous_client_under_auto_classifies_as_nous(monkeypatch, is_asy
     assert seen == ["nous"]
 
 
+def _openrouter_test_pool():
+    return CredentialPool("openrouter", [
+        Key("openrouter", f"k{i}", f"k{i}", "api_key", i, "manual", f"sk-{i}")
+        for i in range(2)
+    ])
+
+
+def test_openrouter_http_200_sse_error_falls_back_without_rotating_pool():
+    error = openai.APIError(
+        "Upstream rate limit exceeded",
+        _REQ,
+        body={
+            "code": 429,
+            "message": "Upstream rate limit exceeded",
+            "metadata": {"error_type": "rate_limit_exceeded", "provider_name": "DeepSeek"},
+        },
+    )
+    pool = _openrouter_test_pool()
+    outcome = run_ladder(error, provider="openrouter", pool=pool)
+    assert outcome.fell_back is True
+    assert [entry.last_status for entry in pool.entries()] == [None, None]
+
+
+def test_partial_choice_error_is_rejected_and_openrouter_key_stays_healthy():
+    from agent.auxiliary_client import _validate_llm_response
+
+    choice_error = {
+        "code": 429,
+        "message": "Upstream rate limit exceeded",
+        "metadata": {"error_type": "rate_limit_exceeded", "provider_name": "DeepSeek"},
+    }
+    response = SimpleNamespace(choices=[
+        SimpleNamespace(message=SimpleNamespace(content="partial text"), finish_reason="stop"),
+        SimpleNamespace(message=None, error=choice_error, finish_reason="error"),
+    ])
+    with patch("agent.aux_accounting.record_aux_usage"):
+        with pytest.raises(InvalidProviderResponseError) as caught:
+            _validate_llm_response(response, task="title_generation")
+    assert caught.value.body == {"error": choice_error}
+
+    pool = _openrouter_test_pool()
+    outcome = run_ladder(caught.value, provider="openrouter", pool=pool)
+    assert outcome.fell_back is True
+    assert [entry.last_status for entry in pool.entries()] == [None, None]
+
+
+def test_openrouter_account_level_429_still_rotates_credential_pool():
+    error = sdk(429, "Rate limit exceeded: 200 requests per minute")
+    pool = _openrouter_test_pool()
+    outcome = run_ladder(error, provider="openrouter", pool=pool)
+    assert outcome.fell_back is True
+    assert pool.entries()[0].last_status == 429
+
+
 def test_invalid_answer_classifies_as_incomplete_response():
     from agent.error_classifier import classify_api_error
 
