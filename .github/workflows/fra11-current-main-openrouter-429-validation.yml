@@ -1,6 +1,7 @@
 name: FRA-11 current-main typed OpenRouter 429 regression
 
 on:
+  workflow_dispatch:
   pull_request:
     branches:
       - fra11/validation-base-current-main-20261112
