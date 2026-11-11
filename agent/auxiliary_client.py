@@ -6645,6 +6645,17 @@ def _validate_llm_response(
     response = _unwrap_data_envelope(response, task)
     from agent.aux_accounting import record_aux_usage
     record_aux_usage(response, task, provider=provider, base_url=base_url)
+    # A partial answer with a choice-level error is a failed provider response, not success.
+    choice_error = auxiliary_call_outcome.embedded_choice_provider_error(response)
+    if choice_error is not None:
+        invalid = InvalidProviderResponseError(
+            f"Auxiliary {task or 'call'}: provider returned a choice-level error: "
+            f"{str(choice_error.get('message') or '')[:240]}"
+        )
+        invalid.body = {"error": choice_error}
+        setattr(invalid, auxiliary_call_outcome.PROVIDER_ERROR_ATTR, choice_error)
+        _note_relay_auxiliary_error(invalid)
+        raise invalid
     # Adapter SimpleNamespace responses are fine — they have .choices[0].message.
     try:
         choices = response.choices
@@ -6660,8 +6671,11 @@ def _validate_llm_response(
             )
             # An HTTP-200 body carrying a provider ``error`` (aggregators relay upstream failures
             # this way): keep it for the classifier without changing how the ladder routes this.
-            setattr(invalid, auxiliary_call_outcome.PROVIDER_ERROR_ATTR,
-                    auxiliary_call_outcome.embedded_provider_error(response))
+            embedded = auxiliary_call_outcome.embedded_provider_error(response)
+            if embedded is not None:
+                # Keep structured provider fields visible to classify_api_error as well as telemetry.
+                invalid.body = {"error": embedded}
+                setattr(invalid, auxiliary_call_outcome.PROVIDER_ERROR_ATTR, embedded)
             _note_relay_auxiliary_error(invalid)
             raise invalid from exc
         response = recovered
