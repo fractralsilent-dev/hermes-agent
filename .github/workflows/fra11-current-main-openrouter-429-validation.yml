@@ -7,6 +7,7 @@ on:
     paths:
       - agent/error_classifier.py
       - agent/auxiliary_call_outcome.py
+      - agent/auxiliary_error_policy.py
       - agent/auxiliary_client.py
       - tests/agent/test_error_classifier.py
       - tests/agent/test_auxiliary_error_policy.py
@@ -63,7 +64,7 @@ jobs:
           while IFS= read -r changed_file; do
             [ -z "$changed_file" ] && continue
             case "$changed_file" in
-              agent/error_classifier.py|agent/auxiliary_call_outcome.py|agent/auxiliary_client.py|tests/agent/test_error_classifier.py|tests/agent/test_auxiliary_error_policy.py) ;;
+              agent/error_classifier.py|agent/auxiliary_call_outcome.py|agent/auxiliary_error_policy.py|agent/auxiliary_client.py|tests/agent/test_error_classifier.py|tests/agent/test_auxiliary_error_policy.py) ;;
               *) echo "UNEXPECTED_CANDIDATE_FILE_SCOPE: $changed_file"; exit 1 ;;
             esac
           done <<< "$changed_files"
