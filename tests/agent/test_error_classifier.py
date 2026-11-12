@@ -1680,7 +1680,7 @@ class TestOpenRouterTypedStreamErrors:
             ("other-provider", {"code": 429, "message": "Rate limit exceeded",
                                 "metadata": {"error_type": "rate_limit_exceeded"}}, 429, FailoverReason.rate_limit),
             ("openrouter", {"code": 503, "message": "Upstream rate limit exceeded",
-                            "metadata": {"error_type": "rate_limit_exceeded"}}, 503, FailoverReason.server_error),
+                            "metadata": {"error_type": "rate_limit_exceeded"}}, 503, FailoverReason.overloaded),
         ],
     )
     def test_typed_guard_requires_provider_metadata_and_embedded_429(self, provider, body, status, expected):

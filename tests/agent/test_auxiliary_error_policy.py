@@ -563,7 +563,8 @@ def test_openrouter_account_level_429_still_rotates_credential_pool():
     pool = _openrouter_test_pool()
     outcome = run_ladder(error, provider="openrouter", pool=pool)
     assert outcome.fell_back is True
-    assert pool.entries()[0].last_status == 429
+    assert pool.entries()[0].last_status == "exhausted"
+    assert pool.entries()[0].last_error_code == 429
 
 
 def test_partial_choice_embedded_error_uses_the_provider_classifier():
@@ -607,7 +608,8 @@ def test_partial_choice_account_level_429_still_rotates_credential_pool():
     pool = _openrouter_test_pool()
     outcome = run_ladder(caught.value, provider="openrouter", pool=pool)
     assert outcome.fell_back is True
-    assert pool.entries()[0].last_status == 429
+    assert pool.entries()[0].last_status == "exhausted"
+    assert pool.entries()[0].last_error_code == 429
 
 
 def test_invalid_answer_classifies_as_incomplete_response():
