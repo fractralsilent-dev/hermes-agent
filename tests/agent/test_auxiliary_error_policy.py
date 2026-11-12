@@ -514,7 +514,7 @@ def test_refreshed_nous_client_under_auto_classifies_as_nous(monkeypatch, is_asy
 
 def _openrouter_test_pool():
     return CredentialPool("openrouter", [
-        Key("openrouter", f"k{i}", f"k{i}", "api_key", i, "manual", f"sk-{i}")
+        Key("openrouter", f"k{i}", f"k{i}", "api_key", i, "manual", f"sk-{i}" if i else "sk-primary")
         for i in range(2)
     ])
 
