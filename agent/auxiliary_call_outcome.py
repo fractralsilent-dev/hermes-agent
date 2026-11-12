@@ -27,15 +27,48 @@ class _EmbeddedProviderError(Exception):
         self.body = {"error": error}
 
 
-def embedded_provider_error(response: Any) -> dict[str, Any] | None:
-    """The ``error`` object of an HTTP-200 body that carried no choices, else None."""
-    error = response.get("error") if isinstance(response, dict) else getattr(response, "error", None)
+def _error_fields(error: Any) -> dict[str, Any] | None:
+    """Normalize a provider error represented by a dict or SDK model."""
     if isinstance(error, dict):
         return error or None
-    if error is None or not (hasattr(error, "message") or hasattr(error, "code")):
+    if error is None:
         return None
-    fields = {"message": getattr(error, "message", None), "code": getattr(error, "code", None)}
-    return {k: v for k, v in fields.items() if v is not None} or None
+    fields = {
+        key: getattr(error, key, None)
+        for key in ("message", "code", "type", "metadata", "status")
+    }
+    extra = getattr(error, "model_extra", None)
+    if isinstance(extra, dict):
+        fields.update(extra)
+    normalized = {key: value for key, value in fields.items() if value is not None}
+    return normalized or None
+
+
+def embedded_choice_provider_error(response: Any) -> dict[str, Any] | None:
+    """First choices[].error, including error finish frames with no error object."""
+    choices = response.get("choices") if isinstance(response, dict) else getattr(response, "choices", None)
+    if not isinstance(choices, (list, tuple)):
+        return None
+    for choice in choices:
+        error = choice.get("error") if isinstance(choice, dict) else getattr(choice, "error", None)
+        if error is None:
+            extra = choice.get("model_extra") if isinstance(choice, dict) else getattr(choice, "model_extra", None)
+            if isinstance(extra, dict):
+                error = extra.get("error")
+        normalized = _error_fields(error)
+        if normalized:
+            return normalized
+        finish_reason = choice.get("finish_reason") if isinstance(choice, dict) else getattr(choice, "finish_reason", None)
+        if str(finish_reason or "").strip().lower() == "error":
+            return {"message": "Chat completion choice finished with error", "type": "choice_error"}
+    return None
+
+
+def embedded_provider_error(response: Any) -> dict[str, Any] | None:
+    """Provider error from an HTTP-200 envelope or a partial-choice response."""
+    error = response.get("error") if isinstance(response, dict) else getattr(response, "error", None)
+    normalized = _error_fields(error)
+    return normalized or embedded_choice_provider_error(response)
 
 
 def is_cancellation(error: BaseException) -> bool:

@@ -1721,21 +1721,52 @@ def _extract_message(error: Exception, body: dict) -> str:
     return (msg.strip() if msg else str(error))[:500]
 
 
+
+def _openrouter_error_payload(body: Any) -> dict:
+    """OpenRouter error across SDK, stream and partial-choice response shapes."""
+    nested = _error_obj(body)
+    if nested:
+        return nested
+    if not isinstance(body, dict):
+        return {}
+    choices = body.get("choices")
+    if isinstance(choices, list):
+        for choice in choices:
+            if not isinstance(choice, dict):
+                continue
+            choice_error = choice.get("error")
+            if isinstance(choice_error, dict) and choice_error:
+                return choice_error
+    # The OpenAI SDK sets APIError.body to the inner data["error"] for an SSE error event.
+    if isinstance(body.get("metadata"), dict) or "error_type" in body or "code" in body:
+        return body
+    return {}
+
+
 def _is_openrouter_upstream_error(body: Any, provider: str) -> bool:
-    """OpenRouter's "Provider returned error" wrapper: the key is healthy, the
-    upstream failed, so credential rotation is the wrong recovery."""
-    err = _error_obj(body)
-    if str(err.get("message") or "").strip().lower() != "provider returned error":
+    """True for established OpenRouter upstream failures, never generic account 429s."""
+    err = _openrouter_error_payload(body)
+    if not err:
         return False
-    if (provider or "").strip().lower() == "openrouter":
-        return True
-    # Otherwise require the metadata shape only OpenRouter produces.
     metadata = err.get("metadata")
-    return isinstance(metadata, dict) and ("raw" in metadata or "provider_name" in metadata)
+    message = str(err.get("message") or "").strip().lower()
+    if message == "provider returned error":
+        if (provider or "").strip().lower() == "openrouter":
+            return True
+        return isinstance(metadata, dict) and ("raw" in metadata or "provider_name" in metadata)
+    code = err.get("code")
+    return (
+        (provider or "").strip().lower() == "openrouter"
+        and isinstance(metadata, dict)
+        and metadata.get("error_type") == "rate_limit_exceeded"
+        and isinstance(code, int)
+        and not isinstance(code, bool)
+        and code == 429
+    )
 
 
 def _extract_upstream_provider_name(body: Any) -> Optional[str]:
     """Pull the upstream provider name out of OpenRouter's error metadata."""
-    metadata = _error_obj(body).get("metadata")
+    metadata = _openrouter_error_payload(body).get("metadata")
     name = metadata.get("provider_name") if isinstance(metadata, dict) else None
     return name.strip() if isinstance(name, str) and name.strip() else None

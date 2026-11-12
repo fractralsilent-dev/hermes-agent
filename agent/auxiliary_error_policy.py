@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, NamedTuple, Optional
 
-from agent.auxiliary_call_outcome import is_cancellation
+from agent.auxiliary_call_outcome import PROVIDER_ERROR_ATTR, _EmbeddedProviderError, is_cancellation
 from agent.error_classifier import (
     POLICY_REFUSAL_REASONS, TRANSIENT_REASONS, ClassifiedError, FailoverReason, classify_api_error,
 )
@@ -51,8 +51,13 @@ def classify_attempt(error: Exception, provider: Optional[str], client: Any = No
     if is_cancellation(error):  # a cancelled task: no retry, no other provider
         return ClassifiedError(_R.unknown, provider=slug, retryable=False, message=str(error),
                                error_context={"interrupted": True})
+    # HTTP-200 provider errors are carried by InvalidProviderResponseError
+    # for the auxiliary ladder. Classify the embedded provider body, otherwise
+    # the generic incomplete-response stage would hide account-level 429s.
+    embedded = getattr(error, PROVIDER_ERROR_ATTR, None)
+    target = _EmbeddedProviderError(embedded) if isinstance(embedded, dict) else error
     return classify_api_error(
-        error, provider="" if slug == "auto" else slug, model=model if isinstance(model, str) else "",
+        target, provider="" if slug == "auto" else slug, model=model if isinstance(model, str) else "",
         base_url=str(url) if isinstance(url, (str, httpx.URL)) and str(url) else str(base_url or ""),
         api_key=key if isinstance(key, str) else None)
 
